@@ -10,6 +10,8 @@ sudo apt upgrade -y
 sudo apt autoremove -y
 sudo apt clean -y
 
+{ echo "y"; echo "\n"; echo "0"; } | sudo x-ui update
+
 # Очистка логов
 sudo journalctl --vacuum-time=7d
 
