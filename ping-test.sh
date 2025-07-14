@@ -7,10 +7,12 @@ DOMAINS=(
     "chatgpt.com"
     "github.com"
     "perplexity.ai"
-    "netflix.com"
+    "apple.com"
     "disneyplus.com"
     "kinopoisk.ru"
     "ya.ru"
+    "vk.ru"
+    "browserleaks.com"
 )
 
 TOTAL_PING_SUM=0
