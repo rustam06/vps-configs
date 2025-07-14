@@ -13,6 +13,7 @@ DOMAINS=(
     "ya.ru"
     "vk.ru"
     "browserleaks.com"
+    "linkedin.com"
 )
 
 TOTAL_PING_SUM=0
