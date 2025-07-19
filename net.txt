@@ -109,4 +109,4 @@ net.ipv4.tcp_timestamps = 0
 
 # Имитация TTL по умолчанию для Windows-систем (128) вместо Linux (64).
 # Один из самых простых и эффективных методов маскировки ОС.
-net.ipv4.ip_default_ttl = 128
+#net.ipv4.ip_default_ttl = 128
