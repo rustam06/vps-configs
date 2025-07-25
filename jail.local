@@ -3,6 +3,7 @@
 bantime = 24h
 
 [sshd]
+port = 8516
 enabled = true
 # Количество неудачных попыток до бана
 maxretry = 3
