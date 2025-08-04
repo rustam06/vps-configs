@@ -34,14 +34,8 @@ net.ipv4.tcp_timestamps = 0
 net.ipv4.tcp_keepalive_time = 300
 net.ipv4.tcp_fin_timeout = 15
 
-# Включить режим низкой задержки TCP
-net.ipv4.tcp_low_latency = 1
-
 # Маскировка отпечатка ОС путем имитации TTL Windows-сервера.
 net.ipv4.ip_default_ttl = 128
 
 # Включить масштабирование TCP окна
 net.ipv4.tcp_window_scaling = 1
-
-# Оптимизация для высокоскоростных соединений
-net.ipv4.tcp_adv_win_scale = 1
