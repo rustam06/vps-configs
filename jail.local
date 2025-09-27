@@ -1,20 +1,18 @@
 [DEFAULT]
-# Время бана. Используйте 'h' для часов, 'd' для дней.
-bantime = 24h
+bantime  = 24h
+findtime = 1h
+backend  = systemd
+banaction = nftables
 
 [sshd]
-port = 8516
-enabled = true
-# Количество неудачных попыток до бана
+enabled  = true
+port     = 8516
 maxretry = 3
 
-
 [recidive]
-enabled = true
-# Искать в логе fail2ban
-logpath = /var/log/fail2ban.log
-# Блокировать, если IP был забанен 5 раз в течение 1 дня
+enabled  = true
+logpath  = /var/log/fail2ban.log
 findtime = 1d
 maxretry = 5
-# Время бана - 1 неделя
-bantime = 1w
+bantime  = 1w
+
