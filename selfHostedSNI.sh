@@ -106,6 +106,83 @@ git clone https://github.com/learning-zone/website-templates.git "$TEMP_DIR"
 SITE_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | shuf -n 1)
 cp -r "$SITE_DIR"/* /var/www/html/
 
+# --- Проверка: разрешён ли вход на порт 80 (HTTP) ---
+echo "Проверяю, открыт ли порт 80 для входящих соединений..."
+
+port80_allowed=false
+reason="Не удалось обнаружить правило, явно разрешающее вход на 80/TCP."
+
+# --- Проверка: разрешён ли вход на порт 80 (HTTP) ---
+# 1) UFW
+if command -v ufw >/dev/null 2>&1; then
+    ufw_status=$(ufw status verbose 2>/dev/null || true)
+    if echo "$ufw_status" | grep -qE "^Status: active"; then
+        # Ищем явное правило ALLOW для 80/tcp
+        if echo "$ufw_status" | grep -qE "^80/tcp\s+ALLOW"; then
+            port80_allowed=true
+            reason="UFW: 80/tcp явно разрешён."
+        else
+            reason="UFW активен, но правило для 80/tcp не обнаружено."
+        fi
+    else
+        # UFW не активен — не является причиной блокировки
+        reason="UFW не активен."
+    fi
+fi
+
+# Результат проверки
+if [ "$port80_allowed" = true ]; then
+    echo "OK — порт 80, судя по локальным правилам фаервола, разрешён. ($reason)"
+else
+    echo "ВНИМАНИЕ — похоже, входящие на порт 80 локально не разрешены. ($reason)"
+    # Если есть UFW — предложим пользователю открыть порт автоматически
+    if command -v ufw >/dev/null 2>&1; then
+        ufw_status=$(ufw status verbose 2>/dev/null || true)
+        if echo "$ufw_status" | grep -qE "^Status: active"; then
+            read -r -p "UFW активен и, вероятно, порт 80 не разрешён. Разрешить вход на 80/tcp сейчас? [y/N]: " ans
+            case "$ans" in
+                [Yy]* )
+                    echo "Разрешаю входящие на 80/tcp через UFW..."
+                    ufw allow 80/tcp
+                    ufw reload || true
+                    echo "Готово. Повторно проверяю..."
+                    # простая повторная проверка
+                    if ufw status | grep -qE "^80/tcp\s+ALLOW"; then
+                        echo "Порт 80 теперь разрешён через UFW."
+                    else
+                        echo "Не удалось автоматически разрешить порт 80 через UFW. Проверьте настройки вручную."
+                        read -r -p "Продолжить попытку получения сертификата несмотря на это? [y/N]: " cont
+                        if ! [[ "$cont" =~ ^[Yy] ]]; then
+                            echo "Прерываю выполнение — откройте порт 80 и запустите скрипт снова."
+                            exit 1
+                        fi
+                    fi
+                    ;;
+                * )
+                    echo "Пользователь отказался автоматически открывать порт 80. Прерываю выполнение."
+                    echo "Откройте порт 80 (например, 'ufw allow 80/tcp') и запустите скрипт снова."
+                    exit 1
+                    ;;
+            esac
+        fi
+    fi
+
+    # Если нет UFW или пользователь отказался — даём подсказки и возможность продолжить
+    if [ "$port80_allowed" = false ]; then
+        echo ""
+        echo "Если вы используете облачный провайдер (AWS/GCP/OVH/Hetzner и т.д.),"
+        echo "не забудьте также открыть порт 80 в правилах Security Group / Firewall на уровне провайдера."
+        read -r -p "Продолжить запрос сертификата несмотря на возможную блокировку 80? [y/N]: " proceed
+        if ! [[ "$proceed" =~ ^[Yy] ]]; then
+            echo "Прерываю выполнение. Откройте порт 80 и запустите скрипт снова."
+            exit 1
+        else
+            echo "Продолжаем: учтите, что certbot может завершиться неудачей, если 80 действительно блокируется внешним фаерволом."
+        fi
+    fi
+fi
+# --- конец блока проверки порта 80 ---
+
 # Выпуск сертификата
 echo "Выпускаем сертификат обычным способом через HTTP-01..."
 certbot --nginx -d "$DOMAIN" --agree-tos -m "admin@$DOMAIN" --non-interactive
