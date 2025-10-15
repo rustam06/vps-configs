@@ -1,12 +1,39 @@
 #!/bin/bash
 
-# Значение порта по умолчанию
-SPORT=8443
-
 if [ "$EUID" -ne 0 ]; then
-  echo "Пожалуйста, запустите скрипт от root (sudo)."
+  echo "Пожалуйста, запустите скрипт от root."
   exit 1
 fi
+
+# Значение порта по умолчанию
+DEFAULT_PORT=8443
+SPORT=$DEFAULT_PORT
+
+# Проверяем, свободен ли порт по умолчанию
+if ss -tuln | grep -q ":$DEFAULT_PORT "; then
+    echo "⚠️ Порт $DEFAULT_PORT занят."
+    read -p "Введите другой порт (например, 9443): " CUSTOM_PORT
+    # Проверяем, что введено что-то
+    if [[ -z "$CUSTOM_PORT" ]]; then
+        echo "Порт не введён. Завершаю работу."
+        exit 1
+    fi
+    # Проверяем, что это число
+    if ! [[ "$CUSTOM_PORT" =~ ^[0-9]+$ ]]; then
+        echo "Ошибка: порт должен быть числом."
+        exit 1
+    fi
+    # Проверяем, свободен ли выбранный порт
+    if ss -tuln | grep -q ":$CUSTOM_PORT "; then
+        echo "Ошибка: порт $CUSTOM_PORT также занят. Завершаю работу."
+        exit 1
+    fi
+    SPORT=$CUSTOM_PORT
+    echo "✅ Используем порт $SPORT."
+else
+    echo "✅ Порт $DEFAULT_PORT свободен, используем его."
+fi
+
 
 # Проверка и установка нужных пакетов
 apt update
@@ -18,7 +45,6 @@ for pkg in curl dnsutils iproute2 nginx certbot python3-certbot-nginx git; do
         echo "Пакет $pkg уже установлен."
     fi
 done
-
 
 # Проверка системы
 if ! grep -E -q "^(ID=debian|ID=ubuntu)" /etc/os-release; then
@@ -88,7 +114,6 @@ if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     echo "Ошибка: сертификат не был выдан. Проверьте логи certbot."
     exit 1
 fi
-
 
 # Настройка конфигурации Nginx
 cat > /etc/nginx/sites-enabled/sni.conf <<EOF
