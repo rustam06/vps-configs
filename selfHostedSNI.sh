@@ -1,0 +1,172 @@
+#!/bin/bash
+
+# Значение порта по умолчанию
+SPORT=8443
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Пожалуйста, запустите скрипт от root (sudo)."
+  exit 1
+fi
+
+# Проверка и установка нужных пакетов
+apt update
+for pkg in curl dnsutils iproute2 nginx certbot python3-certbot-nginx git; do
+    if ! dpkg -s "$pkg" &>/dev/null; then
+        echo "Пакет $pkg не найден. Устанавливаю..."
+        apt install -y "$pkg"
+    else
+        echo "Пакет $pkg уже установлен."
+    fi
+done
+
+
+# Проверка системы
+if ! grep -E -q "^(ID=debian|ID=ubuntu)" /etc/os-release; then
+    echo "Скрипт поддерживает только Debian или Ubuntu. Завершаю работу."
+    exit 1
+fi
+
+# Запрос доменного имени
+read -p "Введите доменное имя: " DOMAIN
+if [[ -z "$DOMAIN" ]]; then
+    echo "Доменное имя не может быть пустым. Завершаю работу."
+    exit 1
+fi
+
+# Получение внешнего IP сервера
+external_ip=$(curl -s --max-time 3 https://api.ipify.org)
+
+# Проверка, что curl успешно получил IP
+if [[ -z "$external_ip" ]]; then
+  echo "Не удалось определить внешний IP сервера. Проверьте подключение к интернету."
+  exit 1
+fi
+
+echo "Внешний IP сервера: $external_ip"
+
+# Получение A-записи домена
+domain_ip=$(dig +short A "$DOMAIN")
+
+# Проверка, что A-запись существует
+if [[ -z "$domain_ip" ]]; then
+  echo "Не удалось получить A-запись для домена $DOMAIN. Убедитесь, что домен существует, подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni"
+  exit 1
+fi
+
+echo "A-запись домена $DOMAIN указывает на: $domain_ip"
+
+# Сравнение IP адресов
+if [[ "$domain_ip" == "$external_ip" ]]; then
+  echo "A-запись домена $DOMAIN соответствует внешнему IP сервера."
+else
+  echo "A-запись домена $DOMAIN не соответствует внешнему IP сервера, подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni#a-запись-домена-не-соответствует-внешнему-ip-сервера-или-не-удалось-получить-a-запись-для-домена"
+  exit 1
+fi
+
+
+if ss -tuln | grep -q ":80 "; then
+    echo "Порт 80 занят, пожалуйста освободите порт, подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni"
+    exit 1
+else
+    echo "Порт 80 свободен."
+fi
+
+
+# Скачивание репозитория
+TEMP_DIR=$(mktemp -d)
+git clone https://github.com/learning-zone/website-templates.git "$TEMP_DIR"
+
+# Выбор случайного сайта
+SITE_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | shuf -n 1)
+cp -r "$SITE_DIR"/* /var/www/html/
+
+# Выпуск сертификата
+echo "Выпускаем сертификат обычным способом через HTTP-01..."
+certbot --nginx -d "$DOMAIN" --agree-tos -m "admin@$DOMAIN" --non-interactive
+
+if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo "Ошибка: сертификат не был выдан. Проверьте логи certbot."
+    exit 1
+fi
+
+
+# Настройка конфигурации Nginx
+cat > /etc/nginx/sites-enabled/sni.conf <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    if (\$host = $DOMAIN) {
+        return 301 https://\$host\$request_uri;
+    }
+
+    return 404;
+}
+
+server {
+    listen 127.0.0.1:$SPORT ssl http2 proxy_protocol;
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+    ssl_session_cache shared:SSL:1m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+  # === ДОБАВЛЕНО: Заголовки для маскировки (бесплатно) ===
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    # Логи (оставляем access_log выключенным для экономии I/O)
+    error_log /var/log/nginx/site_error.log warn;
+    access_log off;
+
+    # Настройки Proxy Protocol
+    real_ip_header proxy_protocol;
+    set_real_ip_from 127.0.0.1;
+    set_real_ip_from ::1;
+
+    root /var/www/html/;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+EOF
+
+rm /etc/nginx/sites-enabled/default
+
+# Перезапуск Nginx
+if nginx -t; then
+    systemctl reload nginx
+    echo "Nginx успешно перезагружен."
+else
+    echo "Ошибка в конфигурации Nginx. Проверьте вывод nginx -t."
+    exit 1
+fi
+
+# Показ путей сертификатов
+CERT_PATH="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
+KEY_PATH="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
+echo ""
+echo ""
+echo ""
+echo ""
+echo "Сертификат и ключ расположены в следующих путях:"
+echo "Сертификат: $CERT_PATH"
+echo "Ключ: $KEY_PATH"
+echo ""
+echo "В качестве Dest укажите: 127.0.0.1:$SPORT"
+echo "В качестве SNI укажите: $DOMAIN"
+
+# Удаление временной директории
+rm -rf "$TEMP_DIR"
+
+echo "Скрипт завершён."
