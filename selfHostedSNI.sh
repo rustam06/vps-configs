@@ -9,7 +9,7 @@ fi
 DEFAULT_PORT=8443
 SPORT=$DEFAULT_PORT
 
-# Проверяем, свободен ли порт по умолчанию а еще это тест на git
+# Проверяем, свободен ли порт по умолчанию
 if ss -tuln | grep -q ":$DEFAULT_PORT "; then
     echo "⚠️ Порт $DEFAULT_PORT занят."
     read -p "Введите другой порт (например, 9443): " CUSTOM_PORT
