@@ -34,6 +34,37 @@ else
     echo "✅ Порт $DEFAULT_PORT свободен, используем его."
 fi
 
+if ss -tuln | grep -q ":80 "; then
+    echo "Порт 80 занят, пожалуйста освободите порт, подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni"
+    exit 1
+else
+    echo "Порт 80 свободен."
+fi
+
+if command -v ufw >/dev/null 2>&1; then
+    # Проверяем статус, только если ufw существует
+    ufw_status=$(ufw status verbose 2>/dev/null || true)
+    
+    if echo "$ufw_status" | grep -qE "^Status: active"; then
+        # Если UFW активен, наше предположение меняется.
+        # Теперь порт считается заблокированным, пока не найдем правило.
+        port80_allowed=false
+        reason="UFW активен, но правило для 80/tcp не обнаружено."
+        
+        if echo "$ufw_status" | grep -qE "^80/tcp\s+ALLOW"; then
+            # Нашли разрешающее правило — всё снова хорошо.
+            port80_allowed=true
+            reason="UFW: 80/tcp явно разрешён."
+        fi
+    fi
+fi
+
+# Результат проверки
+if [ "$port80_allowed" = true ]; then
+    echo "OK — порт 80, судя по локальным правилам фаервола, разрешён. ($reason)"
+else
+    echo "ВНИМАНИЕ — похоже, входящие на порт 80 локально не разрешены. ($reason)"
+fi
 
 # Проверка и установка нужных пакетов
 apt update
@@ -90,14 +121,6 @@ else
 fi
 
 
-if ss -tuln | grep -q ":80 "; then
-    echo "Порт 80 занят, пожалуйста освободите порт, подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni"
-    exit 1
-else
-    echo "Порт 80 свободен."
-fi
-
-
 # Скачивание репозитория
 TEMP_DIR=$(mktemp -d)
 git clone https://github.com/learning-zone/website-templates.git "$TEMP_DIR"
@@ -112,31 +135,6 @@ echo "Проверяю, открыт ли порт 80 для входящих с
 # По умолчанию считаем, что всё хорошо.
 port80_allowed=true
 reason="Локальный фаервол (UFW) не активен или не установлен."
-
-if command -v ufw >/dev/null 2>&1; then
-    # Проверяем статус, только если ufw существует
-    ufw_status=$(ufw status verbose 2>/dev/null || true)
-    
-    if echo "$ufw_status" | grep -qE "^Status: active"; then
-        # Если UFW активен, наше предположение меняется.
-        # Теперь порт считается заблокированным, пока не найдем правило.
-        port80_allowed=false
-        reason="UFW активен, но правило для 80/tcp не обнаружено."
-        
-        if echo "$ufw_status" | grep -qE "^80/tcp\s+ALLOW"; then
-            # Нашли разрешающее правило — всё снова хорошо.
-            port80_allowed=true
-            reason="UFW: 80/tcp явно разрешён."
-        fi
-    fi
-fi
-
-# Результат проверки
-if [ "$port80_allowed" = true ]; then
-    echo "OK — порт 80, судя по локальным правилам фаервола, разрешён. ($reason)"
-else
-    echo "ВНИМАНИЕ — похоже, входящие на порт 80 локально не разрешены. ($reason)"
-fi
 
 # Выпуск сертификата
 echo "Выпускаем сертификат обычным способом через HTTP-01..."
