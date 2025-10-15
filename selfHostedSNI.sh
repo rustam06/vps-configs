@@ -9,6 +9,12 @@ fi
 DEFAULT_PORT=8443
 SPORT=$DEFAULT_PORT
 
+# Проверка системы
+if ! grep -E -q "^(ID=debian|ID=ubuntu)" /etc/os-release; then
+    echo "Скрипт поддерживает только Debian или Ubuntu. Завершаю работу."
+    exit 1
+fi
+
 # Проверяем, свободен ли порт по умолчанию
 if ss -tuln | grep -q ":$DEFAULT_PORT "; then
     echo "⚠️ Порт $DEFAULT_PORT занят."
@@ -34,13 +40,15 @@ else
     echo "✅ Порт $DEFAULT_PORT свободен, используем его."
 fi
 
+#Проверка на 80 порт
 if ss -tuln | grep -q ":80 "; then
-    echo "Порт 80 занят, пожалуйста освободите порт, подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni"
+    echo "Порт 80 занят, пожалуйста освободите порт. Подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni"
     exit 1
 else
     echo "Порт 80 свободен."
 fi
 
+#Проверка UFW
 if command -v ufw >/dev/null 2>&1; then
     # Проверяем статус, только если ufw существует
     ufw_status=$(ufw status verbose 2>/dev/null || true)
@@ -69,7 +77,7 @@ fi
 
 # Проверка и установка нужных пакетов
 apt update
-for pkg in curl dnsutils iproute2 nginx certbot python3-certbot-nginx git; do
+for pkg in dnsutils iproute2 nginx certbot python3-certbot-nginx git; do
     if ! dpkg -s "$pkg" &>/dev/null; then
         echo "Пакет $pkg не найден. Устанавливаю..."
         apt install -y "$pkg"
@@ -78,11 +86,6 @@ for pkg in curl dnsutils iproute2 nginx certbot python3-certbot-nginx git; do
     fi
 done
 
-# Проверка системы
-if ! grep -E -q "^(ID=debian|ID=ubuntu)" /etc/os-release; then
-    echo "Скрипт поддерживает только Debian или Ubuntu. Завершаю работу."
-    exit 1
-fi
 
 # Запрос доменного имени
 read -p "Введите доменное имя: " DOMAIN
@@ -130,12 +133,6 @@ git clone https://github.com/learning-zone/website-templates.git "$TEMP_DIR"
 SITE_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | shuf -n 1)
 cp -r "$SITE_DIR"/* /var/www/html/
 
-# --- Проверка: разрешён ли вход на порт 80 (HTTP) ---
-echo "Проверяю, открыт ли порт 80 для входящих соединений..."
-
-# По умолчанию считаем, что всё хорошо.
-port80_allowed=true
-reason="Локальный фаервол (UFW) не активен или не установлен."
 
 # Выпуск сертификата
 echo "Выпускаем сертификат обычным способом через HTTP-01..."
