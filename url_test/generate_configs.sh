@@ -17,11 +17,6 @@
 
 # Массив с вашими VLESS REALITY ссылками для парсинга.
 declare -a VLESS_CONFIGS=(
-    "vless://5618716e-951b-4253-bdb3-fc7e4c00c19f@64.188.71.51:443?type=tcp&encryption=none&security=reality&pbk=zAHc03ycVZU7Xgh3KyryfTBtoPnY3cOfbBzhIuO8ozw&fp=chrome&sni=mysenko.maximejo.ru&sid=fca89025313b&spx=%2F&flow=xtls-rprx-vision#%F0%9F%87%A9%F0%9F%87%AA%20Senko"
-    "vless://7eaef568-2059-4cdb-8cb2-565dc3ef8420@216.173.70.200:443?type=tcp&encryption=none&security=reality&pbk=xhAWNelqReUkIK-d7wcRfha8PtOul0Zj1RomYp3dtRg&fp=chrome&sni=myveesp.maximejo.ru&sid=74&spx=%2F&flow=xtls-rprx-vision#%F0%9F%87%B1%F0%9F%87%BB%20Veesp"
-    "vless://b968c6bc-6f58-4bcd-a903-6c92e9c8f85b@62.60.149.57:443?type=tcp&encryption=none&security=reality&pbk=YtXaPCNSOJKTxJf-phXA3ANHPy9zFkoVuA9pzlp14Es&fp=chrome&sni=myaeza.maximejo.ru&sid=7acff8cd1a9a&spx=%2F&flow=xtls-rprx-vision#%F0%9F%87%B8%F0%9F%87%AA%20aeza%20-%20rustam"
-    "vless://6e06bfb3-019f-4e75-9b92-40f69a619477@95.182.120.76:443?type=tcp&encryption=none&security=reality&pbk=FmZkNpTMLWd4CsRUATADlxSYfxhXBgn_7ehZrmbRXhk&fp=chrome&sni=myhostrus.maximejo.ru&sid=446c41e6&spx=%2F&flow=xtls-rprx-vision#%F0%9F%87%B7%F0%9F%87%BA%20hosting%20-%20russia"
-    "vless://2cea6fda-a3d5-4e61-947b-0a68bd1b2367@94.232.40.117:443?type=tcp&encryption=none&security=reality&pbk=nvRuL--gbb_mlsfh9SW_6b7x1HBLiG-QnOQbex5RQDE&fp=chrome&sni=myrocket.maximejo.ru&sid=d43a609f74&spx=%2F&flow=xtls-rprx-vision#%F0%9F%87%B7%F0%9F%87%BA%20Rocketcloud"
     # Добавьте больше ссылок сюда...
 )
 

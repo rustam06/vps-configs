@@ -16,10 +16,10 @@
 # --- НАСТРОЙКИ ---
 
 # Токен вашего Telegram-бота (полученный от @BotFather)
-TELEGRAM_BOT_TOKEN="7234739935:AAGZvyUfKE1vU14KSEPTku6KrkZTNkPhh8I"
+TELEGRAM_BOT_TOKEN=""
 
 # ID вашего чата или канала (полученный от @userinfobot)
-TELEGRAM_CHAT_ID="349560988"
+TELEGRAM_CHAT_ID=""
 
 # Директория, где лежат готовые .json файлы конфигураций.
 CONFIG_DIR="/root/xray/vless_configs"
