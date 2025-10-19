@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # ====================================================================================
 #
 #          FILE:  generate_configs.sh
@@ -53,11 +55,6 @@ parse_vless_url() {
     PRETTY_NAME=$(url_decode "$encoded_name")
     # 3. Создаем "безопасное" имя для файла
     SAFE_FILENAME=$(echo "$PRETTY_NAME" | sed -e 's/[^a-zA-Z0-9_-]/-/g' -e 's/--\+/-/g' -e 's/^-//' -e 's/-$//')
-
-    SERVER_NAME=$(echo "${stripped_url}" | cut -d'#' -f2 | sed 's/[^a-zA-Z0-9_-]//g')
-    if [[ -z "$SERVER_NAME" ]]; then
-        SERVER_NAME=$(echo "${stripped_url}" | cut -d'@' -f2 | cut -d':' -f1)
-    fi
 
     local creds_and_server=$(echo "${stripped_url}" | cut -d'?' -f1 | cut -d'#' -f1)
     UUID=$(echo "${creds_and_server}" | cut -d'@' -f1)
