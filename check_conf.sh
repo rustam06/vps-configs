@@ -17,6 +17,8 @@ TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 # Файл для хранения последнего известного состояния конфигураций
 STATE_FILE="${CONFIG_DIR}/.vless_test_status"
 
+[[ "$LOCAL_PORT" =~ ^[0-9]+$ ]] || { echo "Ошибка: LOCAL_PORT должен быть числом"; exit 1; }
+
 send_telegram_notification() {
   local message="$1"
   if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
@@ -109,7 +111,11 @@ while IFS= read -r -d '' config_file; do
 
   "${RUN_CMD[@]}" "$TEMP_CLIENT_CONFIG" >/dev/null 2>&1 &
   V2RAY_PID=$!
-  sleep 0.8
+  # Проверяем готовность порта
+ for i in {1..10}; do
+    nc -z 127.0.0.1 "$LOCAL_PORT" 2>/dev/null && break
+    sleep 0.5
+ done
 
   CURL_RESULT="$(curl -sS -o /dev/null -w "%{http_code}:%{time_total}" --socks5-hostname "127.0.0.1:$LOCAL_PORT" --connect-timeout "$CONNECT_TIMEOUT" -m "$MAX_TIME" "$TEST_URL" || true)"
   CURL_EXIT_CODE=$?
@@ -131,10 +137,17 @@ while IFS= read -r -d '' config_file; do
   fi
   
   # Получаем предыдущий статус. Если его не было, считаем, что был UP, чтобы не слать ложных уведомлений
-  previous_status="${previous_states[$display_name]:-UP}"
-  
-  # Сравниваем статусы и отправляем уведомления только при изменении
-  if [[ "$current_status" == "UP" && "$previous_status" == "DOWN" ]]; then
+previous_status="${previous_states[$display_name]:-UNKNOWN}"
+
+# Единая логическая цепочка
+  if [[ "$previous_status" == "UNKNOWN" ]]; then
+    if [[ "$current_status" == "UP" ]]; then
+        printf "ℹ️  Новая конфигурация '%s' работает\n" "$display_name"
+    else
+        printf "⚠️  Новая конфигурация '%s' НЕ работает\n" "$display_name"
+    fi
+    # Уведомления для новых не отправляем
+  elif [[ "$current_status" == "UP" && "$previous_status" == "DOWN" ]]; then
     # Восстановление!
     restore_msg="✅ УРА: $display_name снова в строю."
     printf "%s\n" "$restore_msg"
@@ -142,19 +155,17 @@ while IFS= read -r -d '' config_file; do
   elif [[ "$current_status" == "DOWN" && "$previous_status" == "UP" ]]; then
     # Первая ошибка!
     if [[ $CURL_EXIT_CODE -ne 0 ]]; then
-      error_msg="❌ $display_name: curl код $CURL_EXIT_CODE (таймаут/подключение)"
+      error_msg="❌ $display_name упал: curl код $CURL_EXIT_CODE (таймаут/подключение)"
       printf "%s\n" "$error_msg"
       send_telegram_notification "$error_msg"
     else
-      error_msg="❌ $display_name упал"
+      error_msg="❌ $display_name упал (HTTP Код: $http_code)"
       printf "%s (Время: %ss)\n" "$error_msg" "$time_total"
       send_telegram_notification "$error_msg"
     fi
   elif [[ "$current_status" == "DOWN" ]]; then
       # Ошибка все еще актуальна, просто выводим в консоль
-      error_msg="❌ $display_name все еще не работает"
-      printf "$error_msg"
-      send_telegram_notification "$error_msg"
+      printf "❌ %s все еще не работает\n" "$display_name"
   fi
 
   # Сохраняем текущий статус для записи в файл в конце
