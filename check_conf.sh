@@ -159,7 +159,7 @@ previous_status="${previous_states[$display_name]:-UNKNOWN}"
       printf "%s\n" "$error_msg"
       send_telegram_notification "$error_msg"
     else
-      error_msg="❌ $display_name упал (HTTP Код: $http_code)"
+      error_msg="❌ $display_name упал"
       printf "%s (Время: %ss)\n" "$error_msg" "$time_total"
       send_telegram_notification "$error_msg"
     fi
