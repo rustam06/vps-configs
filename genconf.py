@@ -8,9 +8,9 @@ import uuid as uuidlib
 from urllib.parse import urlparse, parse_qs, unquote
 
 def slugify(name: str, maxlen: int = 80) -> str:
-    name = unquote(name or "").strip().replace(" ", "_")
+    name = unquote(name or "").strip().replace(" ", "")
     # Разрешим буквы/цифры + базовые символы; остальное заменим на _
-    safe = re.sub(r"[^0-9A-Za-zА-Яа-яЁё._\-]", "_", name)
+    safe = re.sub(r"[^0-9A-Za-zА-Яа-яЁё._\-]", "", name)
     return (safe or "outbound")[:maxlen]
 
 def to_bool(v: str) -> bool:
