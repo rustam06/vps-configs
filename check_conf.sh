@@ -6,7 +6,7 @@ V2RAY_BIN="${V2RAY_BIN:-xray}"
 CONFIG_DIR="${CONFIG_DIR:-.}"
 TEST_URL="${TEST_URL:-https://www.gstatic.com/generate_204}"
 LOCAL_PORT="${LOCAL_PORT:-10808}"
-CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-5}"
+CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-2}"
 MAX_TIME="${MAX_TIME:-10}"
 
 # --- НАСТРОЙКИ ДЛЯ TELEGRAM ---
@@ -149,7 +149,7 @@ previous_status="${previous_states[$display_name]:-UNKNOWN}"
     # Уведомления для новых не отправляем
   elif [[ "$current_status" == "UP" && "$previous_status" == "DOWN" ]]; then
     # Восстановление!
-    restore_msg="✅ УРА: $display_name снова в строю."
+    restore_msg="✅ $display_name снова в строю!"
     printf "%s\n" "$restore_msg"
     send_telegram_notification "$restore_msg"
   elif [[ "$current_status" == "DOWN" && "$previous_status" == "UP" ]]; then
@@ -159,7 +159,7 @@ previous_status="${previous_states[$display_name]:-UNKNOWN}"
       printf "%s\n" "$error_msg"
       send_telegram_notification "$error_msg"
     else
-      error_msg="❌ $display_name упал"
+      error_msg="❌ $display_name упал!!"
       printf "%s (Время: %ss)\n" "$error_msg" "$time_total"
       send_telegram_notification "$error_msg"
     fi
