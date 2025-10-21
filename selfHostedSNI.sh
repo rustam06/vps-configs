@@ -131,8 +131,19 @@ git clone https://github.com/learning-zone/website-templates.git "$TEMP_DIR"
 
 # Выбор случайного сайта
 SITE_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | shuf -n 1)
-cp -r "$SITE_DIR"/* /var/www/html/
 
+# Каталог назначения
+DEST_DIR="/var/www/html"
+
+# Проверяем, существует ли каталог и не пуст ли он
+if [ -d "$DEST_DIR" ]; then
+    echo "Каталог $DEST_DIR существует, очищаем его..."
+    # Удаляем все в каталоге, включая скрытые файлы (.htaccess и т.д.)
+    rm -rf "$DEST_DIR"/* "$DEST_DIR"/.* 2>/dev/null
+else
+    echo "Каталог $DEST_DIR не существует, создаем его..."
+    mkdir -p "$DEST_DIR"
+fi
 
 # Выпуск сертификата
 echo "Выпускаем сертификат обычным способом через HTTP-01..."
