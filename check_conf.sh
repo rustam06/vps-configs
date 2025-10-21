@@ -4,10 +4,10 @@ set -Eeuo pipefail
 # --- НАСТРОЙКИ СКРИПТА ---
 V2RAY_BIN="${V2RAY_BIN:-xray}"
 CONFIG_DIR="${CONFIG_DIR:-.}"
-TEST_URL="${TEST_URL:-https://www.gstatic.com/generate_204}"
+TEST_URL="${TEST_URL:-https://www.google.com/generate_204}"
 LOCAL_PORT="${LOCAL_PORT:-10808}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-2}"
-MAX_TIME="${MAX_TIME:-10}"
+MAX_TIME="${MAX_TIME:-4}"
 
 # --- НАСТРОЙКИ ДЛЯ TELEGRAM ---
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
