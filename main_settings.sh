@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 # --- 0. Проверка на root ---
 if [[ $EUID -ne 0 ]]; then
    echo "Этот скрипт необходимо запустить с правами root (используйте sudo)." 
