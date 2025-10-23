@@ -29,7 +29,7 @@ sed -i "s/^#\?Port .*/Port $new_port/" /etc/ssh/sshd_config
 
 # Отключение входа root
 read -p "Отключить вход для root (рекомендуется)? (Y/n): " disable_root
-if [[ "$disable_root" == "y" || "$disable_root" == "Y" ]]; then
+if [[ "$disable_root" != "n" || "$disable_root" != "N" ]]; then
     echo "Отключаю вход для root..."
     sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
 else
@@ -41,7 +41,7 @@ echo
 echo "ВНИМАНИЕ: Отключение входа по паролю ЗАБЛОКИРУЕТ вам доступ,"
 echo "если у вас НЕ настроен вход по SSH-ключу."
 read -p "Отключить вход по паролю (ТОЛЬКО если у вас есть SSH-ключ)? (Y/n): " disable_pass
-if [[ "$disable_pass" == "y" || "$disable_pass" == "Y" ]]; then
+if [[ "$disable_pass" != "n" || "$disable_pass" != "N" ]]; then
     echo "Отключаю вход по паролю..."
     sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" /etc/ssh/sshd_config
 else
