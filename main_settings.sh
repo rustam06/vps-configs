@@ -48,8 +48,6 @@ else
     echo "Вход по паролю оставлен без изменений."
 fi
 
-echo "Перезапускаю службу SSH..."
-
 # --- 2. Настройка Firewall (UFW) ---
 echo
 echo "--- 2. Настройка Firewall (UFW) ---"
@@ -73,7 +71,6 @@ ufw allow $new_port/tcp
 # Открываем стандартные порты, если нужно (можно закомментировать)
 # ufw allow 80/tcp  # HTTP
 # ufw allow 443/tcp # HTTPS
-
 
 # --- 3. Установка и настройка Fail2Ban ---
 echo
