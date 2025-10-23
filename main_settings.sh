@@ -114,11 +114,11 @@ net.ipv4.tcp_congestion_control = bbr
 net.core.default_qdisc = fq
 
 # Backlogs/queues
-net.core.somaxconn = 8192
-net.core.netdev_max_backlog = 8192
-net.ipv4.tcp_max_syn_backlog = 8192
+net.core.somaxconn = 1024
+net.core.netdev_max_backlog = 2048
+net.ipv4.tcp_max_syn_backlog = 4096
 
-# Buffers (Скорректировано для 1GB RAM)
+# Buffers
 net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
 net.core.optmem_max = 65536
@@ -126,6 +126,7 @@ net.ipv4.tcp_rmem = 4096 131072 16777216
 net.ipv4.tcp_wmem = 4096 131072 16777216
 net.ipv4.udp_rmem_min = 8192
 net.ipv4.udp_wmem_min = 8192
+
 
 # Timeouts & features
 net.ipv4.tcp_fastopen = 3
@@ -155,6 +156,9 @@ net.ipv4.conf.default.send_redirects = 0
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
+
+#Routing
+net.ipv4.ip_forward = 1
 
 # Memory
 vm.swappiness = 10
