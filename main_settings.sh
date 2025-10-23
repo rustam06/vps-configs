@@ -66,7 +66,7 @@ if ufw status | grep -q "Status: active"; then
 else
     # UFW неактивен, значит, это, скорее всего, первая настройка.
     echo "Настраиваю правила UFW по умолчанию..."
-    ufw default deny incoming  # Запретить весь входящий трафик
+    ufw default deny incoming  # Запретить весь входящий трафик
     ufw default allow outgoing # Разрешить весь исходящий трафик
 fi
 
