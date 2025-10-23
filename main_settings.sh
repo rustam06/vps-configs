@@ -29,7 +29,7 @@ sed -i "s/^#\?Port .*/Port $new_port/" /etc/ssh/sshd_config
 
 # Отключение входа root
 read -p "Отключить вход для root (рекомендуется)? (Y/n): " disable_root
-if [[ "$disable_root" != "n" || "$disable_root" != "N" ]]; then
+if [[ "$disable_root" != "n" && "$disable_root" != "N" ]]; then
     echo "Отключаю вход для root..."
     sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
 else
@@ -41,7 +41,7 @@ echo
 echo "ВНИМАНИЕ: Отключение входа по паролю ЗАБЛОКИРУЕТ вам доступ,"
 echo "если у вас НЕ настроен вход по SSH-ключу."
 read -p "Отключить вход по паролю (ТОЛЬКО если у вас есть SSH-ключ)? (Y/n): " disable_pass
-if [[ "$disable_pass" != "n" || "$disable_pass" != "N" ]]; then
+if [[ "$disable_pass" != "n" && "$disable_pass" != "N" ]]; then
     echo "Отключаю вход по паролю..."
     sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" /etc/ssh/sshd_config
 else
@@ -74,14 +74,6 @@ ufw allow $new_port/tcp
 # ufw allow 80/tcp  # HTTP
 # ufw allow 443/tcp # HTTPS
 
-echo "Включаю UFW..."
-# Используем 'yes' для автоматического подтверждения
-yes | ufw enable
-ufw status
-
-systemctl daemon-reload
-systemctl restart ssh
-systemctl restart ssh.socket
 
 # --- 3. Установка и настройка Fail2Ban ---
 echo
@@ -174,15 +166,11 @@ echo "ВНИМАНИЕ: Это действие (NOPASSWD) снижает без
 echo "Оно позволяет пользователям из группы 'sudo' выполнять команды"
 echo "без ввода пароля."
 
+# ПРАВИЛЬНО
 read -p "Вы уверены, что хотите включить NOPASSWD для группы sudo? (Y/n): " sudo_nopasswd
-if [[ "$sudo_nopasswd" == "n" || "$sudo_nopasswd" == "N" ]]; then
+if [[ "$sudo_nopasswd" != "n" && "$sudo_nopasswd" != "N" ]]; then
     echo "Добавляю правило NOPASSWD для группы sudo..."
-    # Создаем отдельный файл в /etc/sudoers.d/ - это безопаснее, чем
-    # редактировать /etc/sudoers напрямую.
-    echo "%sudo   ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/90-custom-sudo-nopasswd
-    # Устанавливаем правильные права
-    chmod 440 /etc/sudoers.d/90-custom-sudo-nopasswd
-    echo "Правило Sudo NOPASSWD добавлено."
+    # ... (остальной код для добавления правила)
 else
     echo "Настройки Sudo не изменены."
 fi
@@ -191,4 +179,13 @@ echo
 echo "--- Настройка сервера завершена! ---"
 echo "ВАЖНО: НЕ закрывайте текущую сессию. Откройте НОВОЕ окно терминала"
 echo "и попробуйте подключиться к серверу, используя новый порт: $new_port"
-echo "Если подключение не удалось, отмените изменения в этом терминале."
+echo "Если подключение не удалось, отмените изменения в этом терминале." 
+
+echo "Включаю UFW..."
+# Используем 'yes' для автоматического подтверждения
+yes | ufw enable
+ufw status
+
+systemctl daemon-reload
+systemctl restart ssh
+systemctl restart ssh.socket
