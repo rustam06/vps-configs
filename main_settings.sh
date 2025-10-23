@@ -50,10 +50,6 @@ fi
 
 echo "Перезапускаю службу SSH..."
 
-systemctl daemon-reload
-systemctl restart ssh
-systemctl restart ssh.socket
-
 # --- 2. Настройка Firewall (UFW) ---
 echo
 echo "--- 2. Настройка Firewall (UFW) ---"
@@ -82,6 +78,10 @@ echo "Включаю UFW..."
 # Используем 'yes' для автоматического подтверждения
 yes | ufw enable
 ufw status
+
+systemctl daemon-reload
+systemctl restart ssh
+systemctl restart ssh.socket
 
 # --- 3. Установка и настройка Fail2Ban ---
 echo
