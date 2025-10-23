@@ -167,7 +167,9 @@ echo "без ввода пароля."
 read -p "Вы уверены, что хотите включить NOPASSWD для группы sudo? (Y/n): " sudo_nopasswd
 if [[ "$sudo_nopasswd" != "n" && "$sudo_nopasswd" != "N" ]]; then
     echo "Добавляю правило NOPASSWD для группы sudo..."
-    # ... (остальной код для добавления правила)
+    echo "%sudo   ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/90-custom-sudo-nopasswd
+    # Устанавливаем правильные права
+    chmod 440 /etc/sudoers.d/90-custom-sudo-nopasswd
 else
     echo "Настройки Sudo не изменены."
 fi
