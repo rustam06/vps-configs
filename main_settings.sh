@@ -174,17 +174,17 @@ else
     echo "Настройки Sudo не изменены."
 fi
 
-echo
-echo "--- Настройка сервера завершена! ---"
-echo "ВАЖНО: НЕ закрывайте текущую сессию. Откройте НОВОЕ окно терминала"
-echo "и попробуйте подключиться к серверу, используя новый порт: $new_port"
-echo "Если подключение не удалось, отмените изменения в этом терминале." 
+systemctl daemon-reload
+systemctl restart ssh
+systemctl restart ssh.socket
 
 echo "Включаю UFW..."
 # Используем 'yes' для автоматического подтверждения
 yes | ufw enable
 ufw status
 
-systemctl daemon-reload
-systemctl restart ssh
-systemctl restart ssh.socket
+echo
+echo "--- Настройка сервера завершена! ---"
+echo "ВАЖНО: НЕ закрывайте текущую сессию. Откройте НОВОЕ окно терминала"
+echo "и попробуйте подключиться к серверу, используя новый порт: $new_port"
+echo "Если подключение не удалось, отмените изменения в этом терминале." 
