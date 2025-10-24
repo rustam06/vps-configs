@@ -145,6 +145,8 @@ else
     mkdir -p "$DEST_DIR"
 fi
 
+cp -r "$SITE_DIR"/* /var/www/html/
+
 # Выпуск сертификата
 echo "Выпускаем сертификат обычным способом через HTTP-01..."
 certbot --nginx -d "$DOMAIN" --agree-tos -m "admin@$DOMAIN" --non-interactive
