@@ -75,10 +75,9 @@ fi
 # Это безопасно для повторного выполнения.
 echo "Открываю (или подтверждаю) новый SSH порт $new_port/tcp..."
 ufw allow $new_port/tcp
-
-# Открываем стандартные порты, если нужно (можно закомментировать)
-# ufw allow 80/tcp  # HTTP
-# ufw allow 443/tcp # HTTPS
+ufw allow 80/tcp  # HTTP
+ufw allow 443/tcp # HTTPS
+ufw allow 8080/tcp # HTTPS
 
 # --- 3. Установка и настройка Fail2Ban ---
 echo
