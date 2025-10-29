@@ -282,29 +282,43 @@ else
   exit 1
 fi
 
+# --- Цвета для красивого вывода ---
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m' # Жирный желтый для акцентов
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color (сброс)
+# -----------------------------------
+
 # --- Показ путей ---
 CERT_PATH="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
 KEY_PATH="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
- 
+
 echo ""
-echo "--- Скрипт завершён ---"
+printf "${GREEN}${BOLD}======================================================${NC}\n"
+printf "${GREEN}${BOLD}      🚀 Скрипт успешно завершён! 🚀 \n${NC}"
+printf "${GREEN}${BOLD}======================================================${NC}\n\n"
+
+# printf "формат" "Заголовок" "Значение"
+# %-10s означает "выделить 10 символов под заголовок, прижав его влево"
+
+printf "${BOLD}Конфигурация для SNI (Reality):\n${NC}"
+printf "  %-10s ${YELLOW}%s${NC}\n" "Домен:" "$DOMAIN"
+printf "  %-10s ${CYAN}%s${NC}\n" "Cert:" "$CERT_PATH"
+printf "  %-10s ${CYAN}%s${NC}\n" "Key:" "$KEY_PATH"
 echo ""
-echo "Сертификат и ключ для SNI ($DOMAIN):"
-echo " Cert: $CERT_PATH"
-echo " Key: $KEY_PATH"
-echo ""
-echo "Настройки для Reality:"
-echo " Dest: 127.0.0.1:$SPORT"
-echo " SNI: $DOMAIN"
+
+printf "${BOLD}Настройки для вашего клиента (Reality):\n${NC}"
+printf "  %-10s ${YELLOW}%s${NC}\n" "Dest:" "127.0.0.1:$SPORT"
+printf "  %-10s ${YELLOW}%s${NC}\n" "SNI:" "$DOMAIN"
 echo ""
 
 if [[ -n "${PANEL:-}" ]]; then
-  echo "Сертификат и ключ для ПАНЕЛИ ($PANEL):"
-  echo " Cert: $PANEL_CERT_PATH"
-  echo " Key: $PANEL_KEY_PATH"
+    printf "${BOLD}Конфигурация для Панели 3x-ui:\n${NC}"
+    printf "  %-10s ${YELLOW}%s${NC}\n" "Домен:" "$PANEL"
+    printf "  %-10s ${CYAN}%s${NC}\n" "Cert:" "$PANEL_CERT_PATH"
+    printf "  %-10s ${CYAN}%s${NC}\n" "Key:" "$PANEL_KEY_PATH"
+    echo ""
 fi
 
-# Удаление временной директории
-rm -rf "$TEMP_DIR"
-
-echo "Скрипт завершён." # (уже есть выше, удаляем дубль)
+printf "${GREEN}${BOLD}======================================================${NC}\n"
