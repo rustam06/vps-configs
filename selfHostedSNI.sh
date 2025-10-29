@@ -151,7 +151,7 @@ if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
 fi
 
 # Настройка конфигурации Nginx
-cat > /etc/nginx/sites-enabled/sni.conf <<EOF
+cat > /etc/nginx/sites-available/sni.conf <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
@@ -196,7 +196,7 @@ server {
 }
 EOF
 
-rm /etc/nginx/sites-enabled/default
+rm /etc/nginx/sites-available/default
 
 # Перезапуск Nginx
 if nginx -t; then
