@@ -4,8 +4,8 @@ set -Eeuo pipefail
 
 # --- 0. Проверка на root ---
 if [[ $EUID -ne 0 ]]; then
-   echo "Этот скрипт необходимо запустить с правами root (используйте sudo)." 
-   exit 1
+    echo "Этот скрипт необходимо запустить с правами root (используйте sudo)." 
+    exit 1
 fi
 
 echo "--- Начинаю автоматическую настройку сервера ---"
@@ -71,13 +71,30 @@ else
 fi
 
 # ВАЖНО: Мы *в любом случае* должны убедиться, что новый SSH-порт открыт.
-# Если правило уже существует, эта команда просто ничего не сделает.
-# Это безопасно для повторного выполнения.
 echo "Открываю (или подтверждаю) новый SSH порт $new_port/tcp..."
 ufw allow $new_port/tcp
-ufw allow 80/tcp  # HTTP
-ufw allow 443/tcp # HTTPS
-ufw allow 8080/tcp # HTTPS
+
+# --- НОВЫЙ БЛОК: Запрос дополнительных портов ---
+echo
+read -p "Введите ДОПОЛНИТЕЛЬНЫЕ порты для UFW через пробел (например, 80, 443, 8080). Нажмите Enter, чтобы пропустить: " custom_ports
+
+if [ -n "$custom_ports" ]; then
+    echo "Открываю дополнительные порты..."
+    # Мы используем 'for port in $custom_ports' без кавычек.
+    # Это намеренно, чтобы bash "разбил" строку по пробелам на отдельные слова (порты).
+    for port in $custom_ports; do
+        # Валидация каждого порта
+        if [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; then
+            echo "Открываю порт $port/tcp..."
+            ufw allow $port/tcp
+        else
+            echo "Ошибка: '$port' - некорректный номер порта. Пропускаю."
+        fi
+    done
+else
+    echo "Дополнительные порты не указаны."
+fi
+# --- КОНЕЦ НОВОГО БЛОКА ---
 
 # --- 3. Установка и настройка Fail2Ban ---
 echo
@@ -103,11 +120,12 @@ sudo systemctl enable fail2ban
 sudo systemctl start fail2ban
 
 # --- 4. Настройка sysctl.conf ---
+# --- ИЗМЕНЕНО: Используем /etc/sysctl.d/ для безопасности ---
 echo
-echo "--- 4. Добавление настроек в /etc/sysctl.conf ---"
+echo "--- 4. Добавление настроек в /etc/sysctl.d/99-custom-tuning.conf ---"
 
-# Добавляем каркас в конец файла
-cat << EOF > /etc/sysctl.conf
+# Добавляем каркас в отдельный файл, а не перезаписываем /etc/sysctl.conf
+cat << EOF > /etc/sysctl.d/99-custom-tuning.conf
 # Performance
 net.ipv4.tcp_congestion_control = bbr
 net.core.default_qdisc = fq
@@ -157,7 +175,7 @@ vm.swappiness = 10
 EOF
 
 echo "Каркас настроек добавлен. Применяю изменения sysctl..."
-sysctl -p
+sysctl -p /etc/sysctl.d/99-custom-tuning.conf
 
 # --- 5. Настройка Sudo NOPASSWD ---
 echo
@@ -182,7 +200,6 @@ fi
 # --- 6. Финальное применение ---
 
 # Определяем цвета для вывода
-# (Лучше вставить это в самое начало скрипта)
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
