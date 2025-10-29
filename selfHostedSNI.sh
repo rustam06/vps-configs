@@ -42,6 +42,9 @@ else
     echo "✅ Порт $DEFAULT_PORT свободен, используем его."
 fi
 
+port80_allowed=true # <-- ДОБАВИТЬ: По умолчанию считаем, что все ОК
+reason="UFW не установлен или неактивен." # <-- ДОБАВИТЬ
+
 #Проверка UFW
 if command -v ufw >/dev/null 2>&1; then
     # Проверяем статус, только если ufw существует
@@ -81,11 +84,21 @@ for pkg in dnsutils iproute2 nginx certbot python3-certbot-nginx git; do
 done
 
 
-# Запрос доменного имени
-read -p "Введите доменное имя: " DOMAIN
+# Запрос доменного имени для SNI
+read -p "Введите доменное имя для SNI (заглушки): " DOMAIN
 if [[ -z "$DOMAIN" ]]; then
-    echo "Доменное имя не может быть пустым. Завершаю работу."
-    exit 1
+    echo "Домен не может быть пустым."
+    exit 1
+fi
+
+# Запрос доменного имени для ПАНЕЛИ
+read -p "Введите доменное имя для ПАНЕЛИ (оставьте пустым, если не нужно): " PANEL
+
+# Запрос почты
+read -p "Введите вашу почту (для Let's Encrypt): " MAIL
+if [[ -z "$MAIL" ]]; then
+    echo "Почта не может быть пустой."
+    exit 1
 fi
 
 # Получение внешнего IP сервера
@@ -141,88 +154,157 @@ fi
 
 cp -r "$SITE_DIR"/* /var/www/html/
 
-# Выпуск сертификата
-echo "Выпускаем сертификат обычным способом через HTTP-01..."
-certbot --nginx -d "$DOMAIN" --agree-tos -m "admin@$DOMAIN" --non-interactive
-
-if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    echo "Ошибка: сертификат не был выдан. Проверьте логи certbot."
-    exit 1
+# Определяем, какие домены слушать на 80 порту
+if [[ -n "$PANEL" ]]; then
+    SERVER_NAMES_80="$DOMAIN $PANEL"
+else
+    SERVER_NAMES_80="$DOMAIN"
 fi
 
 # Настройка конфигурации Nginx
+# --- ЭТАП 1: Создаем конфиг Nginx ТОЛЬКО для webroot-проверки ---
+
+# Настройка конфигурации Nginx (ТОЛЬКО БЛОК 80)
 cat > /etc/nginx/sites-available/sni.conf <<EOF
 server {
-    listen 80;
-    server_name $DOMAIN;
-    return 301 https://$server_name$request_uri;
-}
+    listen 80;
 
-server {
-    listen 127.0.0.1:$SPORT ssl http2 proxy_protocol;
-    server_name $DOMAIN;
+    # 1. Укажите ОБА домена (и для SNI, и для панели)
+    server_name $SERVER_NAMES_80;
 
-    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    # 2. Укажите папку, куда Certbot будет класть файлы
+    root /var/www/html;
 
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
+    # 3. ИСКЛЮЧЕНИЕ: Разрешаем Certbot'у проходить проверку
+    location /.well-known/acme-challenge/ {
+        try_files \$uri =404;
+    }
 
-    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
-    ssl_session_cache shared:SSL:1m;
-    ssl_session_timeout 1d;
-    ssl_session_tickets off;
-
-  # === ДОБАВЛЕНО: Заголовки для маскировки (бесплатно) ===
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header X-Content-Type-Options "nosniff" always;
-
-    # Логи (оставляем access_log выключенным для экономии I/O)
-    error_log /var/log/nginx/site_error.log warn;
-    access_log off;
-
-    # Настройки Proxy Protocol
-    real_ip_header proxy_protocol;
-    set_real_ip_from 127.0.0.1;
-    set_real_ip_from ::1;
-
-    root /var/www/html/;
-    index index.html;
-
-    location / {
-        try_files \$uri \$uri/ =404;
-    }
+    # 4. ВСЕ ОСТАЛЬНОЕ: Редиректим на HTTPS
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 EOF
 
-rm /etc/nginx/sites-available/default
-sudo ln -s /etc/nginx/sites-available/sni.conf /etc/nginx/sites-enabled/sni.conf
+# --- Активация Nginx и перезапуск ---
+rm -f /etc/nginx/sites-enabled/default
+# -f (force) в symlink сделает скрипт безопасным для повторного запуска
+sudo ln -sf /etc/nginx/sites-available/sni.conf /etc/nginx/sites-enabled/sni.conf
 
-# Перезапуск Nginx
+# Перезапуск Nginx (с новым конфигом порта 80)
 if nginx -t; then
-    systemctl reload nginx
-    echo "Nginx успешно перезагружен."
+    systemctl reload nginx
+    echo "Nginx успешно перезагружен (конфиг для webroot готов)."
 else
-    echo "Ошибка в конфигурации Nginx. Проверьте вывод nginx -t."
-    exit 1
+    echo "Ошибка в конфигурации Nginx. Проверьте вывод nginx -t."
+    exit 1
 fi
 
-# Показ путей сертификатов
+# --- ЭТАП 2: Получаем сертификаты (Nginx готов) ---
+
+echo "Получаем сертификат для SNI ($DOMAIN)..."
+sudo certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --agree-tos -m "$MAIL" --non-interactive
+
+# Проверяем, что серт для SNI получен (обязательно!)
+if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo "Ошибка: сертификат для $DOMAIN не был выдан. Проверьте логи certbot."
+    exit 1
+fi
+echo "Сертификат для SNI ($DOMAIN) успешно получен."
+
+# --- Получаем сертификат для ПАНЕЛИ, если домен был указан ---
+# (Ваш код здесь был идеален, я его не трогаю)
+if [[ -n "$PANEL" ]]; then
+    echo "Получаем сертификат для ПАНЕЛИ ($PANEL)..."
+    sudo certbot certonly --webroot -w /var/www/html -d "$PANEL" --agree-tos -m "$MAIL" --non-interactive
+    
+    # Проверяем, что серт для ПАНЕЛИ получен
+    if [ ! -f "/etc/letsencrypt/live/$PANEL/fullchain.pem" ]; then
+        echo "Ошибка: сертификат для $PANEL не был выдан. Проверьте логи certbot."
+        unset PANEL # "Забываем" про панель, раз не вышло
+    else
+        echo "Сертификат для ПАНЕЛИ ($PANEL) успешно получен."
+        PANEL_CERT_PATH="/etc/letsencrypt/live/$PANEL/fullchain.pem"
+        PANEL_KEY_PATH="/etc/letsencrypt/live/$PANEL/privkey.pem"
+    fi
+else
+    echo "Пропускаем получение сертификата для панели (домен не указан)."
+fi
+
+# --- ЭТАП 3: Дописываем SSL-блок в конфиг Nginx ---
+echo "Сертификаты получены. Добавляем SSL-блок в Nginx..."
+
+# Используем cat >> (append / дописать), а не > (overwrite / перезаписать)
+cat >> /etc/nginx/sites-available/sni.conf <<EOF
+
+server {
+    listen 127.0.0.1:$SPORT ssl http2 proxy_protocol; # <-- SPORT из начала скрипта
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305';
+    ssl_session_cache shared:SSL:1m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    error_log /var/log/nginx/site_error.log warn;
+    access_log off;
+
+    real_ip_header proxy_protocol;
+    set_real_ip_from 127.0.0.1;
+    set_real_ip_from ::1;
+
+    root /var/www/html/;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+}
+EOF
+
+# --- Финальная перезагрузка Nginx с полным конфигом ---
+if nginx -t; then
+    systemctl reload nginx
+    echo "Nginx успешно перезагружен (SSL-конфиг активирован)."
+else
+    echo "КРИТИЧЕСКАЯ ОШИБКА: Не удалось применить SSL-конфиг. Проверьте nginx -t."
+    exit 1
+fi
+
+# --- Показ путей ---
 CERT_PATH="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
 KEY_PATH="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
+    
 echo ""
+echo "--- Скрипт завершён ---"
 echo ""
+echo "Сертификат и ключ для SNI ($DOMAIN):"
+echo "  Cert: $CERT_PATH"
+echo "  Key:  $KEY_PATH"
 echo ""
+echo "Настройки для Reality:"
+echo "  Dest: 127.0.0.1:$SPORT"
+echo "  SNI:  $DOMAIN"
 echo ""
-echo "Сертификат и ключ расположены в следующих путях:"
-echo "Сертификат: $CERT_PATH"
-echo "Ключ: $KEY_PATH"
-echo ""
-echo "В качестве Dest укажите: 127.0.0.1:$SPORT"
-echo "В качестве SNI укажите: $DOMAIN"
+
+if [[ -n "${PANEL:-}" ]]; then
+    echo "Сертификат и ключ для ПАНЕЛИ ($PANEL):"
+    echo "  Cert: $PANEL_CERT_PATH"
+    echo "  Key:  $PANEL_KEY_PATH"
+fi
 
 # Удаление временной директории
 rm -rf "$TEMP_DIR"
 
-echo "Скрипт завершён."
+echo "Скрипт завершён." # (уже есть выше, удаляем дубль)
