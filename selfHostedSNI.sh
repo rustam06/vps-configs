@@ -42,14 +42,6 @@ else
     echo "✅ Порт $DEFAULT_PORT свободен, используем его."
 fi
 
-#Проверка на 80 порт
-if ss -tuln | grep -q ":80 "; then
-    echo "Порт 80 занят, пожалуйста освободите порт. Подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni"
-    exit 1
-else
-    echo "Порт 80 свободен."
-fi
-
 #Проверка UFW
 if command -v ufw >/dev/null 2>&1; then
     # Проверяем статус, только если ufw существует
@@ -163,12 +155,7 @@ cat > /etc/nginx/sites-enabled/sni.conf <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
-
-    if (\$host = $DOMAIN) {
-        return 301 https://\$host\$request_uri;
-    }
-
-    return 404;
+    return 301 https://$server_name$request_uri;
 }
 
 server {
