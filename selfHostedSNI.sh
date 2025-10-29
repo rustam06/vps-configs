@@ -197,6 +197,7 @@ server {
 EOF
 
 rm /etc/nginx/sites-available/default
+sudo ln -s /etc/nginx/sites-available/sni.conf /etc/nginx/sites-enabled/sni.conf
 
 # Перезапуск Nginx
 if nginx -t; then
