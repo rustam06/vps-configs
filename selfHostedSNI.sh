@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 if [ "$EUID" -ne 0 ]; then
   echo "Пожалуйста, запустите скрипт от root."
   exit 1
