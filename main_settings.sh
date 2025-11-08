@@ -10,43 +10,67 @@ fi
 
 echo "--- Начинаю автоматическую настройку сервера ---"
 
-# --- 1. Настройка SSH ---
-echo
-echo "--- 1. Настройка /etc/ssh/sshd_config ---"
+# --- Константы ---
+SSHD_OVERRIDE_FILE="/etc/ssh/sshd_config.d/01-my-overrides.conf"
+MAIN_SSHD_CONFIG="/etc/ssh/sshd_config"
+SOCKET_OVERRIDE_DIR="/etc/systemd/system/ssh.socket.d"
+SOCKET_OVERRIDE_FILE="$SOCKET_OVERRIDE_DIR/custom-port.conf"
+
+# --- 1.1 Запрос данных от пользователя ---
 
 # Запрос нового порта
-read -p "Введите новый SSH порт (например, 2222): " new_port
+read -p "Введите новый SSH порт (например, 8516): " new_port
 
-# Простая проверка, что введено число
+# Проверка, что введено число в допустимом диапазоне
 if ! [[ "$new_port" =~ ^[0-9]+$ ]] || [ "$new_port" -lt 1024 ] || [ "$new_port" -gt 65535 ]; then
     echo "Ошибка: Введите корректный номер порта (1024-65535)."
     exit 1
 fi
 
-echo "Меняю порт SSH на $new_port..."
-# Находим строку Port или #Port и заменяем ее.
-sed -i "s/^#\?Port .*/Port $new_port/" /etc/ssh/sshd_config
-
 # Отключение входа root
 read -p "Отключить вход для root (рекомендуется)? (Y/n): " disable_root
-if [[ "$disable_root" != "n" && "$disable_root" != "N" ]]; then
-    echo "Отключаю вход для root..."
-    sed -i "s/^#\?PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
-else
-    echo "Вход для root оставлен без изменений."
-fi
 
 # Отключение входа по паролю
 echo
 echo "ВНИМАНИЕ: Отключение входа по паролю ЗАБЛОКИРУЕТ вам доступ,"
 echo "если у вас НЕ настроен вход по SSH-ключу."
 read -p "Отключить вход по паролю (ТОЛЬКО если у вас есть SSH-ключ)? (Y/n): " disable_pass
-if [[ "$disable_pass" != "n" && "$disable_pass" != "N" ]]; then
-    echo "Отключаю вход по паролю..."
-    sed -i "s/^#\?PasswordAuthentication .*/PasswordAuthentication no/" /etc/ssh/sshd_config
+
+# --- 1.2 Создание конфига для sshd ---
+echo "Создаю файл $SSHD_OVERRIDE_FILE..."
+# Начинаем файл с нового порта
+cat <<EOF > "$SSHD_OVERRIDE_FILE"
+# --- Персональные настройки SSH (Приоритет 01) ---
+Port $new_port
+EOF
+
+# Добавляем отключение root, если выбрано
+if [[ "$disable_root" != "n" && "$disable_root" != "N" ]]; then
+    echo "PermitRootLogin no" >> "$SSHD_OVERRIDE_FILE"
+    echo " - Добавлено: PermitRootLogin no"
 else
-    echo "Вход по паролю оставлен без изменений."
+    echo " - Вход для root оставлен (не рекомендуется)."
 fi
+
+# Добавляем "золотую триаду" для отключения пароля, если выбрано
+if [[ "$disable_pass" != "n" && "$disable_pass" != "N" ]]; then
+    cat <<EOF >> "$SSHD_OVERRIDE_FILE"
+
+# Полное отключение входа по паролю
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+EOF
+    echo " - Добавлено: Полное отключение входа по паролю (3 директивы)."
+else
+    echo " - Вход по паролю оставлен включенным."
+fi
+
+# --- 1.3 Комментирование старого порта в основном конфиге ---
+echo "Комментирую активный 'Port' в $MAIN_SSHD_CONFIG (создаю бэкап .bak)..."
+# -i.bak создает бэкап
+# Эта команда ищет ТОЛЬКО незакомментированные строки 'Port' и комментирует их
+sed -i.bak 's/^[[:space:]]*Port /#Port /' "$MAIN_SSHD_CONFIG"
 
 # --- 2. Настройка Firewall (UFW) ---
 echo
