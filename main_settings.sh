@@ -263,7 +263,6 @@ fi
 # --- ЭТО ПОСЛЕДНИЕ КОМАНДЫ СКРИПТА ---
 # Они разорвут соединение
 systemctl daemon-reload
-systemctl restart ssh
 systemctl restart ssh.socket
 yes | ufw enable
 ufw status
