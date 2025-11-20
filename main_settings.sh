@@ -254,7 +254,7 @@ if sshd -t; then
     echo "Конфигурация SSH корректна."
 else
     echo -e "${RED}ОШИБКА: Конфигурация SSH содержит ошибки! Отмена рестарта.${NC}"
-    ssh -t # Покажет ошибки
+    sshd -t # Покажет ошибки
     exit 1
 fi
 
@@ -263,4 +263,3 @@ fi
 systemctl daemon-reload
 systemctl restart ssh.socket
 yes | ufw enable
-ufw status
