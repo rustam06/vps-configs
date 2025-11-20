@@ -155,7 +155,7 @@ net.ipv4.tcp_congestion_control = bbr
 net.core.default_qdisc = fq
 
 # Backlogs/queues
-net.core.somaxconn = 1024
+net.core.somaxconn = 4096
 net.core.netdev_max_backlog = 2048
 net.ipv4.tcp_max_syn_backlog = 4096
 
