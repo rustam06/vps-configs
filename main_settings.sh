@@ -13,8 +13,6 @@ echo "--- Начинаю автоматическую настройку сер�
 # --- Константы ---
 SSHD_OVERRIDE_FILE="/etc/ssh/sshd_config.d/01-my-overrides.conf"
 MAIN_SSHD_CONFIG="/etc/ssh/sshd_config"
-SOCKET_OVERRIDE_DIR="/etc/systemd/system/ssh.socket.d"
-SOCKET_OVERRIDE_FILE="$SOCKET_OVERRIDE_DIR/custom-port.conf"
 
 # --- 1.1 Запрос данных от пользователя ---
 
