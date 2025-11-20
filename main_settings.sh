@@ -123,23 +123,29 @@ echo
 echo "--- 3. Установка Fail2Ban ---"
 apt install fail2ban -y
 
-echo "Скачиваю jail.local..."
-# Проверка и установка curl, если его нет
-if ! command -v curl &> /dev/null; then
-    apt install curl -y
-fi
-curl -Lo /etc/fail2ban/jail.local "https://raw.githubusercontent.com/rustam06/vps-configs/refs/heads/main/jail.local"
-    
-if [ $? -eq 0 ]; then
-    echo "Файл jail.local успешно скачан."
-else
-    echo "Ошибка: не удалось скачать файл с https://raw.githubusercontent.com/rustam06/vps-configs/refs/heads/main/jail.local"
-fi
+echo "Создаю локальный конфиг /etc/fail2ban/jail.local..."
+
+# Создаем конфиг локально (Safe & Self-contained)
+cat <<EOF > /etc/fail2ban/jail.local
+[DEFAULT]
+# Бан на 1 час
+bantime = 1h
+# Если было 5 неудачных попыток за 10 минут
+findtime = 10m
+maxretry = 5
+ignoreip = 127.0.0.1/8
+
+[sshd]
+enabled = true
+port = $new_port
+filter = sshd
+logpath = /var/log/auth.log
+backend = systemd
+EOF
 
 echo "Запускаю Fail2Ban..."
-
-sudo systemctl enable fail2ban
-sudo systemctl start fail2ban
+systemctl enable fail2ban
+systemctl start fail2ban
 
 # --- 4. Настройка sysctl.conf ---
 # --- ИЗМЕНЕНО: Используем /etc/sysctl.d/ для безопасности ---
