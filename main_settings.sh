@@ -158,7 +158,7 @@ systemctl start fail2ban
 # --- 4. Настройка sysctl.conf ---
 # --- ИЗМЕНЕНО: Используем /etc/sysctl.d/ для безопасности ---
 echo
-echo "--- 4. Добавление настроек в /etc/sysctl.d/99-custom-tuning.conf ---"
+echo "--- 4. Добавление настроек в /etc/sysctl.d/99-z-custom-tuning.conf ---"
 
 # Добавляем каркас в отдельный файл, а не перезаписываем /etc/sysctl.conf
 cat << EOF > /etc/sysctl.d/99-custom-tuning.conf
