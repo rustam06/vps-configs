@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Administration</title>
+    <style>
+        body {
+            background-color: #f0f2f5;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #1c1e21;
+        }
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 360px;
+            text-align: center;
+        }
+        .login-container h2 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #333;
+            font-weight: 600;
+        }
+        /* Стили для сообщения об ошибке */
+        .error-message {
+            background-color: #ffebe8;
+            border: 1px solid #dd3c10;
+            color: #dd3c10;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 15px;
+            display: none; /* Скрыто по умолчанию */
+            text-align: left;
+        }
+        .input-group {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            color: #606770;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        .input-group input:focus {
+            border-color: #1877f2;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.2);
+        }
+        /* Красная рамка при ошибке */
+        .input-error {
+            border-color: #dd3c10 !important;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #1877f2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #166fe5;
+        }
+        button:disabled {
+            background-color: #9cbff9;
+            cursor: not-allowed;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #90949c;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
+        <h2>Admin Panel</h2>
+        
+        <div id="error-msg" class="error-message">
+            Invalid username or password. Please try again.
+        </div>
+
+        <form id="loginForm">
+            <div class="input-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="input-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" id="submitBtn">Log In</button>
+        </form>
+        <div class="footer">
+            &copy; 2024 Secure System Access. All rights reserved.
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            event.preventDefault(); // Останавливаем перезагрузку страницы
+
+            const btn = document.getElementById('submitBtn');
+            const errorMsg = document.getElementById('error-msg');
+            const passwordInput = document.getElementById('password');
+            const usernameInput = document.getElementById('username');
+
+            // 1. Скрываем старую ошибку и блокируем кнопку
+            errorMsg.style.display = 'none';
+            passwordInput.classList.remove('input-error');
+            usernameInput.classList.remove('input-error');
+            
+            btn.disabled = true;
+            btn.innerText = 'Verifying...'; // Имитация проверки
+
+            // 2. Имитируем задержку сети (1 секунда)
+            setTimeout(function() {
+                // 3. Показываем ошибку
+                errorMsg.style.display = 'block';
+                passwordInput.classList.add('input-error');
+                usernameInput.classList.add('input-error');
+                
+                // Очищаем поле пароля для реализма
+                passwordInput.value = '';
+                passwordInput.focus();
+
+                // Возвращаем кнопку в исходное состояние
+                btn.disabled = false;
+                btn.innerText = 'Log In';
+            }, 1000); 
+        });
+    </script>
+
+</body>
+</html>
