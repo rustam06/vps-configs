@@ -131,28 +131,27 @@ else
   exit 1
 fi
 
-
-# Скачивание репозитория
-TEMP_DIR=$(mktemp -d)
-git clone https://github.com/learning-zone/website-templates.git "$TEMP_DIR"
-
-# Выбор случайного сайта
-SITE_DIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | shuf -n 1)
-
 # Каталог назначения
 DEST_DIR="/var/www/html"
 
-# Проверяем, существует ли каталог и не пуст ли он
-if [ -d "$DEST_DIR" ]; then
-    echo "Каталог $DEST_DIR существует, очищаем его..."
-    # Удаляем все в каталоге, включая скрытые файлы (.htaccess и т.д.)
-    rm -rf "$DEST_DIR"/* "$DEST_DIR"/.* 2>/dev/null
-else
-    echo "Каталог $DEST_DIR не существует, создаем его..."
-    mkdir -p "$DEST_DIR"
-fi
+echo "Подготовка каталога $DEST_DIR..."
 
-cp -r "$SITE_DIR"/* /var/www/html/
+# Удаляем каталог полностью (это безопаснее и чище, чем удалять файлы внутри)
+# Флаг -rf удалит его, даже если он не пуст. Ошибки не будет, если его нет.
+rm -rf "$DEST_DIR"
+
+# Создаем чистый каталог заново
+mkdir -p "$DEST_DIR"
+
+echo "Загрузка index.html..."
+# Загружаем файл
+wget -q -P "$DEST_DIR" https://raw.githubusercontent.com/rustam06/vps-configs/refs/heads/main/index.html
+
+# Опционально: Назначаем правильные права (чтобы веб-сервер мог читать файл)
+# chown -R www-data:www-data "$DEST_DIR"
+
+echo "Готово."
+
 
 # Определяем, какие домены слушать на 80 порту
 if [[ -n "$PANEL" ]]; then
