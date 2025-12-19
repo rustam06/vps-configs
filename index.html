@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,6 +16,7 @@
             margin: 0;
             color: #1c1e21;
         }
+
         .login-container {
             background: white;
             padding: 40px;
@@ -23,13 +25,36 @@
             width: 100%;
             max-width: 360px;
             text-align: center;
+            position: relative;
         }
+
+        /* 2. Стили для плавающего логотипа */
+        .logo-floating {
+            position: absolute;
+            /* Вырываем из потока */
+            top: -170px;
+            /* Поднимаем НАД панелью (регулируйте это число) */
+            left: 0;
+            /* Прижимаем к левому краю панели... */
+            width: 100%;
+            /* ...растягиваем на всю ширину... */
+            text-align: center;
+            /* ...чтобы картинка встала ровно по центру */
+        }
+
+        .logo-floating img {
+            height: 100px;
+            /* Размер картинки */
+            width: auto;
+        }
+
         .login-container h2 {
             margin-top: 0;
             margin-bottom: 20px;
             color: #333;
             font-weight: 600;
         }
+
         /* Стили для сообщения об ошибке */
         .error-message {
             background-color: #ffebe8;
@@ -39,19 +64,23 @@
             border-radius: 4px;
             font-size: 14px;
             margin-bottom: 15px;
-            display: none; /* Скрыто по умолчанию */
+            display: none;
+            /* Скрыто по умолчанию */
             text-align: left;
         }
+
         .input-group {
             margin-bottom: 15px;
             text-align: left;
         }
+
         .input-group label {
             display: block;
             margin-bottom: 5px;
             font-size: 14px;
             color: #606770;
         }
+
         .input-group input {
             width: 100%;
             padding: 10px;
@@ -60,19 +89,22 @@
             font-size: 16px;
             box-sizing: border-box;
         }
+
         .input-group input:focus {
             border-color: #1877f2;
             outline: none;
             box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.2);
         }
+
         /* Красная рамка при ошибке */
         .input-error {
             border-color: #dd3c10 !important;
         }
+
         button {
             width: 100%;
             padding: 12px;
-            background-color: #1877f2;
+            background-color: #000000;
             color: white;
             border: none;
             border-radius: 4px;
@@ -81,13 +113,16 @@
             cursor: pointer;
             transition: background 0.2s;
         }
+
         button:hover {
-            background-color: #166fe5;
+            background-color: #595959;
         }
+
         button:disabled {
-            background-color: #9cbff9;
+            background-color: #898989;
             cursor: not-allowed;
         }
+
         .footer {
             margin-top: 20px;
             font-size: 12px;
@@ -95,11 +130,17 @@
         }
     </style>
 </head>
+
 <body>
 
     <div class="login-container">
+
+        <div class="logo-floating">
+            <img src="https://raw.githubusercontent.com/rustam06/vps-configs/refs/heads/main/logo.svg" alt="Logo">
+        </div>
+
         <h2>Admin Panel</h2>
-        
+
         <div id="error-msg" class="error-message">
             Invalid username or password. Please try again.
         </div>
@@ -121,7 +162,7 @@
     </div>
 
     <script>
-        document.getElementById('loginForm').addEventListener('submit', function(event) {
+        document.getElementById('loginForm').addEventListener('submit', function (event) {
             event.preventDefault(); // Останавливаем перезагрузку страницы
 
             const btn = document.getElementById('submitBtn');
@@ -133,17 +174,17 @@
             errorMsg.style.display = 'none';
             passwordInput.classList.remove('input-error');
             usernameInput.classList.remove('input-error');
-            
+
             btn.disabled = true;
             btn.innerText = 'Verifying...'; // Имитация проверки
 
             // 2. Имитируем задержку сети (1 секунда)
-            setTimeout(function() {
+            setTimeout(function () {
                 // 3. Показываем ошибку
                 errorMsg.style.display = 'block';
                 passwordInput.classList.add('input-error');
                 usernameInput.classList.add('input-error');
-                
+
                 // Очищаем поле пароля для реализма
                 passwordInput.value = '';
                 passwordInput.focus();
@@ -151,9 +192,10 @@
                 // Возвращаем кнопку в исходное состояние
                 btn.disabled = false;
                 btn.innerText = 'Log In';
-            }, 1000); 
+            }, 1000);
         });
     </script>
 
 </body>
+
 </html>
