@@ -146,7 +146,6 @@ ignoreip = 127.0.0.1/8
 enabled = true
 port = $new_port
 filter = sshd
-logpath = /var/log/auth.log
 backend = systemd
 EOF
 
