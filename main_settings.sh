@@ -117,6 +117,44 @@ else
     echo "Дополнительные порты не указаны."
 fi
 
+# --- 3. Установка и настройка Fail2Ban ---
+echo
+echo "--- 3. Установка Fail2Ban ---"
+apt install fail2ban -y
+
+echo "Создаю локальный конфиг /etc/fail2ban/jail.local..."
+
+# Создаем конфиг локально (Safe & Self-contained)
+cat <<EOF > /etc/fail2ban/jail.local
+[DEFAULT]
+# Бан на 1 неделю (604800 секунд)
+# Боты обычно теряют интерес, если порт закрыт так долго.
+bantime = 1w
+
+# Время, за которое считаются попытки (24 часа)
+# Это позволит поймать "хитрых" ботов, которые делают 1 попытку в час.
+findtime = 24h
+
+# Количество попыток
+# Для SSH-ключей 3 попытки более чем достаточно.
+maxretry = 3
+
+# Игнорировать локальный адрес (обязательно)
+ignoreip = 127.0.0.1/8
+
+[sshd]
+enabled = true
+port = $new_port
+filter = sshd
+logpath = /var/log/auth.log
+backend = systemd
+EOF
+
+echo "Запускаю Fail2Ban..."
+systemctl enable fail2ban
+systemctl start fail2ban
+
+
 # --- 4. Настройка sysctl.conf ---
 # --- ИЗМЕНЕНО: Используем /etc/sysctl.d/ для безопасности ---
 echo
