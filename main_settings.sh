@@ -4,11 +4,18 @@ set -Eeuo pipefail
 
 # --- 0. Проверка на root ---
 if [[ $EUID -ne 0 ]]; then
-    echo "Этот скрипт необходимо запустить с правами root (используйте sudo)." 
+    echo "Этот скрипт необходимо запустить с правами root (используйте sudo)."
     exit 1
 fi
 
-echo "--- Начинаю автоматическую настройку сервера ---"
+# Определяем цвета для вывода
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+echo -e "${CYAN}--- Начинаю автоматическую настройку сервера ---${NC}"
 
 # --- Константы ---
 SSHD_OVERRIDE_FILE="/etc/ssh/sshd_config.d/01-my-overrides.conf"
@@ -21,7 +28,7 @@ read -p "Введите новый SSH порт (например, 8516): " new_
 
 # Проверка, что введено число в допустимом диапазоне
 if ! [[ "$new_port" =~ ^[0-9]+$ ]] || [ "$new_port" -lt 1024 ] || [ "$new_port" -gt 65535 ]; then
-    echo "Ошибка: Введите корректный номер порта (1024-65535)."
+    echo -e "${RED}Ошибка: Введите корректный номер порта (1024-65535).${NC}"
     exit 1
 fi
 
@@ -30,8 +37,8 @@ read -p "Отключить вход для root (рекомендуется)? (
 
 # Отключение входа по паролю
 echo
-echo "ВНИМАНИЕ: Отключение входа по паролю ЗАБЛОКИРУЕТ вам доступ,"
-echo "если у вас НЕ настроен вход по SSH-ключу."
+echo -e "${YELLOW}ВНИМАНИЕ: Отключение входа по паролю ЗАБЛОКИРУЕТ вам доступ,${NC}"
+echo -e "${YELLOW}если у вас НЕ настроен вход по SSH-ключу.${NC}"
 read -p "Отключить вход по паролю (ТОЛЬКО если у вас есть SSH-ключ)? (Y/n): " disable_pass
 
 # --- 1.2 Создание конфига для sshd ---
@@ -45,36 +52,40 @@ EOF
 # Добавляем отключение root, если выбрано
 if [[ "$disable_root" != "n" && "$disable_root" != "N" ]]; then
     echo "PermitRootLogin no" >> "$SSHD_OVERRIDE_FILE"
-    echo " - Добавлено: PermitRootLogin no"
+    echo -e "${GREEN} - Добавлено: PermitRootLogin no${NC}"
 else
-    echo " - Вход для root оставлен (не рекомендуется)."
+    echo -e "${YELLOW} - Вход для root оставлен (не рекомендуется).${NC}"
 fi
 
 # Добавляем "золотую триаду" для отключения пароля, если выбрано
 if [[ "$disable_pass" != "n" && "$disable_pass" != "N" ]]; then
-    cat <<EOF >> "$SSHD_OVERRIDE_FILE"
+    # Проверка наличия SSH-ключей перед отключением пароля
+    if ! grep -q "^ssh-" /root/.ssh/authorized_keys 2>/dev/null && ! grep -q "^ssh-" /home/*/.ssh/authorized_keys 2>/dev/null; then
+        echo -e "${RED}КРИТИЧЕСКАЯ ОШИБКА: SSH-ключи не найдены ни у root, ни у пользователей!${NC}"
+        echo -e "${YELLOW}Отключение входа по паролю отменено для вашей безопасности.${NC}"
+    else
+        cat <<EOF >> "$SSHD_OVERRIDE_FILE"
 
 # Полное отключение входа по паролю
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 UsePAM no
 EOF
-    echo " - Добавлено: Полное отключение входа по паролю (3 директивы)."
+        echo -e "${GREEN} - Добавлено: Полное отключение входа по паролю (3 директивы).${NC}"
+    fi
 else
     echo " - Вход по паролю оставлен включенным."
 fi
 
 # --- 1.3 Комментирование старого порта в основном конфиге ---
 echo "Комментирую активный 'Port' в $MAIN_SSHD_CONFIG (создаю бэкап .bak)..."
-# -i.bak создает бэкап
-# Эта команда ищет ТОЛЬКО незакомментированные строки 'Port' и комментирует их
 sed -i.bak 's/^[[:space:]]*Port /#Port /' "$MAIN_SSHD_CONFIG"
 
 # --- 2. Настройка Firewall (UFW) ---
 echo
-echo "--- 2. Настройка Firewall (UFW) ---"
+echo -e "${CYAN}--- 2. Настройка Firewall (UFW) ---${NC}"
 
-# Проверка и установка UFW (для Debian/Ubuntu)
+# Проверка и установка UFW
 if ! command -v ufw &> /dev/null; then
     echo "UFW не найден. Устанавливаю..."
     apt update
@@ -86,31 +97,25 @@ fi
 if ufw status | grep -q "Status: active"; then
     echo "UFW уже активен. Пропускаю настройку правил по умолчанию."
 else
-    # UFW неактивен, значит, это, скорее всего, первая настройка.
     echo "Настраиваю правила UFW по умолчанию..."
-    ufw default deny incoming  # Запретить весь входящий трафик
-    ufw default allow outgoing # Разрешить весь исходящий трафик
+    ufw default deny incoming
+    ufw default allow outgoing
 fi
 
-# ВАЖНО: Мы *в любом случае* должны убедиться, что новый SSH-порт открыт.
-echo "Открываю (или подтверждаю) новый SSH порт $new_port/tcp..."
+echo "Открываю новый SSH порт $new_port/tcp..."
 ufw allow $new_port/tcp
 
-# --- НОВЫЙ БЛОК: Запрос дополнительных портов ---
 echo
-read -p "Введите ДОПОЛНИТЕЛЬНЫЕ порты для UFW через пробел (например, 80, 443, 8080). Нажмите Enter, чтобы пропустить: " custom_ports
+read -p "Введите ДОПОЛНИТЕЛЬНЫЕ порты для UFW через пробел (например, 80 443 8080). Нажмите Enter, чтобы пропустить: " custom_ports
 
 if [ -n "$custom_ports" ]; then
     echo "Открываю дополнительные порты..."
-    # Мы используем 'for port in $custom_ports' без кавычек.
-    # Это намеренно, чтобы bash "разбил" строку по пробелам на отдельные слова (порты).
     for port in $custom_ports; do
-        # Валидация каждого порта
         if [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; then
             echo "Открываю порт $port/tcp..."
             ufw allow $port/tcp
         else
-            echo "Ошибка: '$port' - некорректный номер порта. Пропускаю."
+            echo -e "${RED}Ошибка: '$port' - некорректный номер порта. Пропускаю.${NC}"
         fi
     done
 else
@@ -119,28 +124,17 @@ fi
 
 # --- 3. Установка и настройка Fail2Ban ---
 echo
-echo "--- 3. Установка Fail2Ban ---"
+echo -e "${CYAN}--- 3. Установка Fail2Ban ---${NC}"
 apt install fail2ban -y
 
 echo "Создаю локальный конфиг /etc/fail2ban/jail.local..."
-
-# Создаем конфиг локально (Safe & Self-contained)
 cat <<EOF > /etc/fail2ban/jail.local
 [DEFAULT]
-# Бан на 1 неделю (604800 секунд)
-# Боты обычно теряют интерес, если порт закрыт так долго.
 bantime = 1w
-
-# Время, за которое считаются попытки (24 часа)
-# Это позволит поймать "хитрых" ботов, которые делают 1 попытку в час.
 findtime = 24h
-
-# Количество попыток
-# Для SSH-ключей 3 попытки более чем достаточно.
 maxretry = 3
-
-# Игнорировать локальный адрес (обязательно)
-ignoreip = 127.0.0.1/8
+# Игнорировать локальный адрес (IPv4 и IPv6)
+ignoreip = 127.0.0.1/8 ::1
 
 [sshd]
 enabled = true
@@ -153,13 +147,14 @@ echo "Запускаю Fail2Ban..."
 systemctl enable fail2ban
 systemctl start fail2ban
 
-
 # --- 4. Настройка sysctl.conf ---
-# --- ИЗМЕНЕНО: Используем /etc/sysctl.d/ для безопасности ---
 echo
-echo "--- 4. Добавление настроек в /etc/sysctl.d/99-z-custom-tuning.conf ---"
+echo -e "${CYAN}--- 4. Добавление настроек в /etc/sysctl.d/99-custom-tuning.conf ---${NC}"
 
-# Добавляем каркас в отдельный файл, а не перезаписываем /etc/sysctl.conf
+# Подгружаем модуль BBR, чтобы sysctl не упал с ошибкой
+modprobe tcp_bbr || true
+echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
+
 cat << EOF > /etc/sysctl.d/99-custom-tuning.conf
 # Performance
 net.ipv4.tcp_congestion_control = bbr
@@ -214,65 +209,65 @@ sysctl -p /etc/sysctl.d/99-custom-tuning.conf
 
 # --- 5. Настройка Sudo NOPASSWD ---
 echo
-echo "--- 5. Настройка Sudo NOPASSWD ---"
+echo -e "${CYAN}--- 5. Настройка Sudo NOPASSWD ---${NC}"
 
-echo "ВНИМАНИЕ: Это действие (NOPASSWD) снижает безопасность."
-echo "Оно позволяет пользователям из группы 'sudo' выполнять команды"
-echo "без ввода пароля."
+echo -e "${YELLOW}ВНИМАНИЕ: Это действие (NOPASSWD) снижает безопасность.${NC}"
+echo "Оно позволяет пользователям из группы 'sudo' выполнять команды без ввода пароля."
 
-# ПРАВИЛЬНО
 read -p "Вы уверены, что хотите включить NOPASSWD для группы sudo? (Y/n): " sudo_nopasswd
 if [[ "$sudo_nopasswd" != "n" && "$sudo_nopasswd" != "N" ]]; then
-    echo "Добавляю правило NOPASSWD для группы sudo..."
-    echo "%sudo   ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/90-custom-sudo-nopasswd
-    # Устанавливаем правильные права
-    chmod 440 /etc/sudoers.d/90-custom-sudo-nopasswd
+    echo "Проверяю и добавляю правило NOPASSWD для группы sudo..."
+    echo "%sudo   ALL=(ALL) NOPASSWD: ALL" > /tmp/90-custom-sudo-nopasswd
+    
+    # Безопасная проверка синтаксиса перед применением
+    if visudo -c -f /tmp/90-custom-sudo-nopasswd &>/dev/null; then
+        mv /tmp/90-custom-sudo-nopasswd /etc/sudoers.d/
+        chmod 440 /etc/sudoers.d/90-custom-sudo-nopasswd
+        echo -e "${GREEN}Правило NOPASSWD успешно добавлено.${NC}"
+    else
+        echo -e "${RED}ОШИБКА: Неверный синтаксис sudoers! Действие отменено для безопасности.${NC}"
+        rm -f /tmp/90-custom-sudo-nopasswd
+    fi
 else
     echo "Настройки Sudo не изменены."
 fi
 
-
 # --- 6. Финальное применение ---
-
-# Определяем цвета для вывода
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
 echo
 echo -e "${GREEN}--- ✅ Настройка сервера почти завершена! ---${NC}"
 echo
 echo -e "${YELLOW}Остался последний шаг: ${RED}применить все изменения.${NC}"
 echo
 
-read -p "Вы готовы применить изменения и разорвать сессию? (Y/n): " confirm_apply
+read -p "Вы готовы применить изменения и перезапустить сервисы? (Y/n): " confirm_apply
 
 if [[ "$confirm_apply" == "n" || "$confirm_apply" == "N" ]]; then
     echo -e "${YELLOW}Отменено. Настройки не применены.${NC}"
     echo "Вы можете применить их вручную:"
-    echo "systemctl daemon-reload && yes | ufw enable && systemctl restart ssh && systemctl restart ssh.socket && ufw status"
+    echo "systemctl daemon-reload && ufw --force enable && systemctl disable --now ssh.socket && systemctl enable --now ssh.service && systemctl restart ssh.service"
     exit 0
+fi
+
+echo
+echo "Проверяю корректность конфигурации SSH..."
+if sshd -t; then
+    echo -e "${GREEN}Конфигурация SSH корректна.${NC}"
+else
+    echo -e "${RED}ОШИБКА: Конфигурация SSH содержит ошибки! Отмена рестарта.${NC}"
+    sshd -t
+    exit 1
 fi
 
 echo
 echo -e "${GREEN}Применяю настройки... Сессия сейчас прервется.${NC}"
 echo "Не забудьте открыть НОВЫЙ терминал и подключиться к порту $new_port"
-sleep 2 # Даем пользователю секунду прочитать
+sleep 3
 
-# Добавьте это перед блоком systemctl restart ...
-echo "Проверяю корректность конфигурации SSH..."
-if sshd -t; then
-    echo "Конфигурация SSH корректна."
-else
-    echo -e "${RED}ОШИБКА: Конфигурация SSH содержит ошибки! Отмена рестарта.${NC}"
-    sshd -t # Покажет ошибки
-    exit 1
-fi
-
-# --- ЭТО ПОСЛЕДНИЕ КОМАНДЫ СКРИПТА ---
-# Они разорвут соединение
+# Применение настроек
 systemctl daemon-reload
-systemctl restart ssh.socket
-yes | ufw enable
+ufw --force enable
+
+# Отключаем сокет-активацию (актуально для Ubuntu 22.10+ и Debian 12+) и рестартуем сам сервис
+systemctl disable --now ssh.socket 2>/dev/null || true
+systemctl enable --now ssh.service
+systemctl restart ssh.service
