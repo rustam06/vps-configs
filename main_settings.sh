@@ -69,9 +69,9 @@ if [[ "$disable_pass" != "n" && "$disable_pass" != "N" ]]; then
 # Полное отключение входа по паролю
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-UsePAM no
+UsePAM yes
 EOF
-        echo -e "${GREEN} - Добавлено: Полное отключение входа по паролю (3 директивы).${NC}"
+        echo -e "${GREEN} - Добавлено: Полное отключение входа по паролю (2 директивы + UsePAM).${NC}"
     fi
 else
     echo " - Вход по паролю оставлен включенным."
@@ -150,12 +150,46 @@ systemctl start fail2ban
 # --- 4. Настройка sysctl.conf ---
 echo
 echo -e "${CYAN}--- 4. Добавление настроек в /etc/sysctl.d/99-custom-tuning.conf ---${NC}"
+echo "Выберите вариант настройки sysctl:"
+echo "  1) Включить ТОЛЬКО BBR + FQ (Рекомендуется для VPN / AmneziaWG)"
+echo "  2) Полная оптимизация (BBR, буферы, безопасность, отключение IPv6)"
+echo "  3) Ничего не менять (Пропустить)"
+read -p "Ваш выбор [1/2/3, по умолчанию 1]: " sysctl_choice
 
-# Подгружаем модуль BBR, чтобы sysctl не упал с ошибкой
-modprobe tcp_bbr || true
-echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
+# Если пользователь просто нажал Enter, выбираем 1
+if [[ -z "$sysctl_choice" ]]; then
+    sysctl_choice="1"
+fi
 
-cat << EOF > /etc/sysctl.d/99-custom-tuning.conf
+case "$sysctl_choice" in
+    1)
+        echo "Применяю только BBR и FQ..."
+        modprobe tcp_bbr || true
+        echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
+
+        cat << EOF > /etc/sysctl.d/99-custom-tuning.conf
+# Performance
+net.ipv4.tcp_congestion_control = bbr
+net.core.default_qdisc = fq
+
+# Отключение ipv6
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+
+# Memory
+vm.swappiness = 10
+
+EOF
+        sysctl -p /etc/sysctl.d/99-custom-tuning.conf
+        ;;
+        
+    2)
+        echo "Применяю полную оптимизацию sysctl..."
+        modprobe tcp_bbr || true
+        echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
+
+        cat << EOF > /etc/sysctl.d/99-custom-tuning.conf
 # Performance
 net.ipv4.tcp_congestion_control = bbr
 net.core.default_qdisc = fq
@@ -203,9 +237,18 @@ net.ipv6.conf.lo.disable_ipv6 = 1
 # Memory
 vm.swappiness = 10
 EOF
-
-echo "Каркас настроек добавлен. Применяю изменения sysctl..."
-sysctl -p /etc/sysctl.d/99-custom-tuning.conf
+        sysctl -p /etc/sysctl.d/99-custom-tuning.conf
+        ;;
+        
+    3)
+        echo "Пропуск настройки sysctl."
+        ;;
+        
+    *)
+        # Обработка ошибки, если ввели какую-то букву или цифру, отличную от 1, 2, 3
+        echo "Неверный выбор. Никакие изменения не применены."
+        ;;
+esac
 
 # --- 5. Настройка Sudo NOPASSWD ---
 echo
