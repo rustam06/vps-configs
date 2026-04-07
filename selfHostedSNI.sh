@@ -157,11 +157,16 @@ if ! wget -q -O /tmp/template.zip "$RANDOM_TEMPLATE"; then
     exit 1
 fi
 
-# Распаковываем и перемещаем
+# Распаковываем во временную папку
 unzip -q /tmp/template.zip -d /tmp/template_extracted
-# GitHub архивы имеют корневую папку (например, startbootstrap-agency-master), 
-# поэтому берем содержимое ВНУТРИ этой папки
-mv /tmp/template_extracted/*/* "$DEST_DIR"/
+
+# Проверяем, есть ли папка dist (в новых шаблонах StartBootstrap готовый сайт там)
+if [ -d /tmp/template_extracted/*/dist ]; then
+    mv /tmp/template_extracted/*/dist/* "$DEST_DIR"/
+else
+    # Если папки dist нет, переносим всё как есть
+    mv /tmp/template_extracted/*/* "$DEST_DIR"/
+fi
 
 # Убираем временные файлы
 rm -rf /tmp/template.zip /tmp/template_extracted
