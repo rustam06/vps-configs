@@ -42,22 +42,21 @@ else
     echo "✅ Порт $DEFAULT_PORT свободен, используем его."
 fi
 
-port80_allowed=true # <-- ДОБАВИТЬ: По умолчанию считаем, что все ОК
-reason="UFW не установлен или неактивен." # <-- ДОБАВИТЬ
+port80_allowed=true # По умолчанию считаем, что все ОК
+reason="UFW не установлен или неактивен." 
 
-#Проверка UFW
+# Проверка UFW
 if command -v ufw >/dev/null 2>&1; then
     # Проверяем статус, только если ufw существует
     ufw_status=$(ufw status verbose 2>/dev/null || true)
     
     if echo "$ufw_status" | grep -qE "^Status: active"; then
-        # Если UFW активен, наше предположение меняется.
-        # Теперь порт считается заблокированным, пока не найдем правило.
+        # Если UFW активен, порт считается заблокированным, пока не найдем правило.
         port80_allowed=false
         reason="UFW активен, но правило для 80/tcp не обнаружено."
         
         if echo "$ufw_status" | grep -qE "^80/tcp\s+ALLOW"; then
-            # Нашли разрешающее правило — всё снова хорошо.
+            # Нашли разрешающее правило
             port80_allowed=true
             reason="UFW: 80/tcp явно разрешён."
         fi
@@ -74,7 +73,8 @@ fi
 
 # Проверка и установка нужных пакетов
 apt update
-for pkg in dnsutils iproute2 nginx certbot python3-certbot-nginx git; do
+# Добавлены unzip, curl и wget для работы с архивами сайтов
+for pkg in dnsutils iproute2 nginx certbot python3-certbot-nginx git unzip wget curl; do
     if ! dpkg -s "$pkg" &>/dev/null; then
         echo "Пакет $pkg не найден. Устанавливаю..."
         apt install -y "$pkg"
@@ -83,16 +83,12 @@ for pkg in dnsutils iproute2 nginx certbot python3-certbot-nginx git; do
     fi
 done
 
-
 # Запрос доменного имени для SNI
-read -p "Введите доменное имя для SNI (заглушки): " DOMAIN
+read -p "Введите доменное имя для SNI (маскировки): " DOMAIN
 if [[ -z "$DOMAIN" ]]; then
     echo "Домен не может быть пустым."
     exit 1
 fi
-
-# Запрос доменного имени для ПАНЕЛИ
-read -p "Введите доменное имя для ПАНЕЛИ (оставьте пустым, если не нужно): " PANEL
 
 # Запрос почты
 read -p "Введите вашу почту (для Let's Encrypt): " MAIL
@@ -117,7 +113,7 @@ domain_ip=$(dig +short A "$DOMAIN")
 
 # Проверка, что A-запись существует
 if [[ -z "$domain_ip" ]]; then
-  echo "Не удалось получить A-запись для домена $DOMAIN. Убедитесь, что домен существует, подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni"
+  echo "Не удалось получить A-запись для домена $DOMAIN. Убедитесь, что домен существует."
   exit 1
 fi
 
@@ -127,7 +123,7 @@ echo "A-запись домена $DOMAIN указывает на: $domain_ip"
 if [[ "$domain_ip" == "$external_ip" ]]; then
   echo "A-запись домена $DOMAIN соответствует внешнему IP сервера."
 else
-  echo "A-запись домена $DOMAIN не соответствует внешнему IP сервера, подробнее что делать вы можете ознакомиться тут: https://wiki.yukikras.net/ru/selfsni#a-запись-домена-не-соответствует-внешнему-ip-сервера-или-не-удалось-получить-a-запись-для-домена"
+  echo "A-запись домена $DOMAIN не соответствует внешнему IP сервера."
   exit 1
 fi
 
@@ -135,51 +131,65 @@ fi
 DEST_DIR="/var/www/html"
 
 echo "Подготовка каталога $DEST_DIR..."
-
-# Удаляем каталог полностью (это безопаснее и чище, чем удалять файлы внутри)
-# Флаг -rf удалит его, даже если он не пуст. Ошибки не будет, если его нет.
 rm -rf "$DEST_DIR"
-
-# Создаем чистый каталог заново
 mkdir -p "$DEST_DIR"
 
-echo "Загрузка index.html..."
-# Загружаем файл
-wget -q -P "$DEST_DIR" https://raw.githubusercontent.com/rustam06/vps-configs/refs/heads/main/index.html
+# --- ЗАГРУЗКА ПОЛНОЦЕННОГО САЙТА (МАСКИРОВКИ) ---
+echo "Загрузка и установка полноценного сайта для маскировки..."
 
-# Опционально: Назначаем правильные права (чтобы веб-сервер мог читать файл)
-# chown -R www-data:www-data "$DEST_DIR"
+# Список архивов с качественными шаблонами сайтов-визиток, блогов и агентств
+TEMPLATES=(
+    "https://github.com/StartBootstrap/startbootstrap-clean-blog/archive/refs/heads/master.zip"
+    "https://github.com/StartBootstrap/startbootstrap-agency/archive/refs/heads/master.zip"
+    "https://github.com/StartBootstrap/startbootstrap-freelancer/archive/refs/heads/master.zip"
+    "https://github.com/StartBootstrap/startbootstrap-resume/archive/refs/heads/master.zip"
+    "https://github.com/StartBootstrap/startbootstrap-business-casual/archive/refs/heads/master.zip"
+)
 
-echo "Готово."
+# Случайный выбор шаблона
+RANDOM_TEMPLATE=${TEMPLATES[$RANDOM % ${#TEMPLATES[@]}]}
 
+echo "Выбран шаблон: $RANDOM_TEMPLATE"
 
-# Определяем, какие домены слушать на 80 порту
-if [[ -n "$PANEL" ]]; then
-    SERVER_NAMES_80="$DOMAIN $PANEL"
-else
-    SERVER_NAMES_80="$DOMAIN"
+# Скачиваем во временную папку
+if ! wget -q -O /tmp/template.zip "$RANDOM_TEMPLATE"; then
+    echo "Ошибка при скачивании шаблона. Проверьте интернет-соединение."
+    exit 1
 fi
+
+# Распаковываем и перемещаем
+unzip -q /tmp/template.zip -d /tmp/template_extracted
+# GitHub архивы имеют корневую папку (например, startbootstrap-agency-master), 
+# поэтому берем содержимое ВНУТРИ этой папки
+mv /tmp/template_extracted/*/* "$DEST_DIR"/
+
+# Убираем временные файлы
+rm -rf /tmp/template.zip /tmp/template_extracted
+
+# Назначаем права для веб-сервера
+chown -R www-data:www-data "$DEST_DIR"
+find "$DEST_DIR" -type d -exec chmod 755 {} \;
+find "$DEST_DIR" -type f -exec chmod 644 {} \;
+
+echo "Сайт-маскировка успешно установлен!"
 
 # Настройка конфигурации Nginx
 # --- ЭТАП 1: Создаем конфиг Nginx ТОЛЬКО для webroot-проверки ---
 
-# Настройка конфигурации Nginx (ТОЛЬКО БЛОК 80)
 cat > /etc/nginx/sites-available/sni.conf <<EOF
 server {
   listen 80;
+  server_name $DOMAIN;
 
-  # 1. Укажите ОБА домена (и для SNI, и для панели)
-  server_name $SERVER_NAMES_80;
-
-  # 2. Укажите папку, куда Certbot будет класть файлы
+  # Папка, куда Certbot будет класть файлы (и где лежит наш фейковый сайт)
   root /var/www/html;
 
-  # 3. ИСКЛЮЧЕНИЕ: Разрешаем Certbot'у проходить проверку
+  # ИСКЛЮЧЕНИЕ: Разрешаем Certbot'у проходить проверку
   location /.well-known/acme-challenge/ {
     try_files \$uri =404;
   }
 
-  # 4. ВСЕ ОСТАЛЬНОЕ: Редиректим на HTTPS
+  # ВСЕ ОСТАЛЬНОЕ: Редиректим на HTTPS
   location / {
     return 301 https://\$host\$request_uri;
   }
@@ -188,10 +198,8 @@ EOF
 
 # --- Активация Nginx и перезапуск ---
 rm -f /etc/nginx/sites-enabled/default
-# -f (force) в symlink сделает скрипт безопасным для повторного запуска
 sudo ln -sf /etc/nginx/sites-available/sni.conf /etc/nginx/sites-enabled/sni.conf
 
-# Перезапуск Nginx (с новым конфигом порта 80)
 if nginx -t; then
   systemctl reload nginx
   echo "Nginx успешно перезагружен (конфиг для webroot готов)."
@@ -200,45 +208,23 @@ else
   exit 1
 fi
 
-# --- ЭТАП 2: Получаем сертификаты (Nginx готов) ---
-
+# --- ЭТАП 2: Получаем сертификаты ---
 echo "Получаем сертификат для SNI ($DOMAIN)..."
 sudo certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --agree-tos -m "$MAIL" --non-interactive
 
-# Проверяем, что серт для SNI получен (обязательно!)
 if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
   echo "Ошибка: сертификат для $DOMAIN не был выдан. Проверьте логи certbot."
   exit 1
 fi
 echo "Сертификат для SNI ($DOMAIN) успешно получен."
 
-# --- Получаем сертификат для ПАНЕЛИ, если домен был указан ---
-# (Ваш код здесь был идеален, я его не трогаю)
-if [[ -n "$PANEL" ]]; then
-  echo "Получаем сертификат для ПАНЕЛИ ($PANEL)..."
-  sudo certbot certonly --webroot -w /var/www/html -d "$PANEL" --agree-tos -m "$MAIL" --non-interactive
- 
-  # Проверяем, что серт для ПАНЕЛИ получен
-  if [ ! -f "/etc/letsencrypt/live/$PANEL/fullchain.pem" ]; then
-    echo "Ошибка: сертификат для $PANEL не был выдан. Проверьте логи certbot."
-    unset PANEL # "Забываем" про панель, раз не вышло
-  else
-    echo "Сертификат для ПАНЕЛИ ($PANEL) успешно получен."
-    PANEL_CERT_PATH="/etc/letsencrypt/live/$PANEL/fullchain.pem"
-    PANEL_KEY_PATH="/etc/letsencrypt/live/$PANEL/privkey.pem"
-  fi
-else
-  echo "Пропускаем получение сертификата для панели (домен не указан)."
-fi
-
 # --- ЭТАП 3: Дописываем SSL-блок в конфиг Nginx ---
 echo "Сертификаты получены. Добавляем SSL-блок в Nginx..."
 
-# Используем cat >> (append / дописать), а не > (overwrite / перезаписать)
 cat >> /etc/nginx/sites-available/sni.conf <<EOF
 
 server {
-  listen 127.0.0.1:$SPORT ssl http2 proxy_protocol; # <-- SPORT из начала скрипта
+  listen 127.0.0.1:$SPORT ssl http2 proxy_protocol;
   server_name $DOMAIN;
 
   ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
@@ -263,7 +249,7 @@ server {
   set_real_ip_from 127.0.0.1;
   set_real_ip_from ::1;
 
-  root /var/www/html/;
+  root /var/www/html;
   index index.html;
 
   location / {
@@ -272,7 +258,7 @@ server {
 }
 EOF
 
-# --- Финальная перезагрузка Nginx с полным конфигом ---
+# --- Финальная перезагрузка Nginx ---
 if nginx -t; then
   systemctl reload nginx
   echo "Nginx успешно перезагружен (SSL-конфиг активирован)."
@@ -281,15 +267,13 @@ else
   exit 1
 fi
 
-# --- Цвета для красивого вывода ---
+# --- Вывод результатов ---
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m' # Жирный желтый для акцентов
+YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color (сброс)
-# -----------------------------------
+NC='\033[0m'
 
-# --- Показ путей ---
 CERT_PATH="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
 KEY_PATH="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
 
@@ -298,26 +282,14 @@ printf "${GREEN}${BOLD}======================================================${N
 printf "${GREEN}${BOLD}      🚀 Скрипт успешно завершён! 🚀 \n${NC}"
 printf "${GREEN}${BOLD}======================================================${NC}\n\n"
 
-# printf "формат" "Заголовок" "Значение"
-# %-10s означает "выделить 10 символов под заголовок, прижав его влево"
-
 printf "${BOLD}Конфигурация для SNI (Reality):\n${NC}"
 printf "  %-10s ${YELLOW}%s${NC}\n" "Домен:" "$DOMAIN"
 printf "  %-10s ${CYAN}%s${NC}\n" "Cert:" "$CERT_PATH"
 printf "  %-10s ${CYAN}%s${NC}\n" "Key:" "$KEY_PATH"
 echo ""
 
-printf "${BOLD}Настройки для вашего клиента (Reality):\n${NC}"
+printf "${BOLD}Настройки для вашего клиента (Reality/Xray):\n${NC}"
 printf "  %-10s ${YELLOW}%s${NC}\n" "Dest:" "127.0.0.1:$SPORT"
 printf "  %-10s ${YELLOW}%s${NC}\n" "SNI:" "$DOMAIN"
 echo ""
-
-if [[ -n "${PANEL:-}" ]]; then
-    printf "${BOLD}Конфигурация для Панели 3x-ui:\n${NC}"
-    printf "  %-10s ${YELLOW}%s${NC}\n" "Домен:" "$PANEL"
-    printf "  %-10s ${CYAN}%s${NC}\n" "Cert:" "$PANEL_CERT_PATH"
-    printf "  %-10s ${CYAN}%s${NC}\n" "Key:" "$PANEL_KEY_PATH"
-    echo ""
-fi
-
 printf "${GREEN}${BOLD}======================================================${NC}\n"
