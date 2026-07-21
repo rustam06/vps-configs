@@ -206,7 +206,7 @@ net.ipv4.tcp_rmem = 4096 131072 4194304
 net.ipv4.tcp_wmem = 4096 131072 4194304
 
 # Timeouts & features
-net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_fastopen = 0
 net.ipv4.tcp_timestamps = 1
 net.ipv4.tcp_sack = 1
 net.ipv4.tcp_keepalive_time = 300
@@ -215,7 +215,7 @@ net.ipv4.tcp_keepalive_probes = 5
 net.ipv4.tcp_fin_timeout = 15
 net.ipv4.tcp_mtu_probing = 1
 net.ipv4.tcp_slow_start_after_idle = 0
-net.ipv4.tcp_ecn = 2
+net.ipv4.tcp_ecn = 0
 net.ipv4.ip_local_port_range = 10240 65535
 
 # Security (IPv4)
