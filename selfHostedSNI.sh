@@ -179,40 +179,6 @@ find "$DEST_DIR" -type f -exec chmod 644 {} \;
 echo "Сайт-маскировка успешно установлен!"
 
 # Настройка конфигурации Nginx
-# --- ЭТАП 1: Создаем конфиг Nginx ТОЛЬКО для webroot-проверки ---
-
-cat >> /etc/nginx/nginx.conf <<EOF
-stream {
-    map \$ssl_preread_server_name \$backend {
-        # Если запрашивают ваш домен — кидаем в Xray
-        $DOMAIN xray;
-        # Любой другой мусор или сканирование по IP — кидаем напрямую в заглушку
-        default web;
-    }
-
-    upstream xray {
-        server 127.0.0.1:8444; # Новый порт вашего Xray из Шага 1
-    }
-
-    upstream web {
-        server 127.0.0.1:8443; # Локальный порт вашего сайта из sni.conf
-    }
-
-    server {
-        listen 443;
-        listen [::]:443;
-        
-        # Включаем чтение SNI до расшифровки
-        ssl_preread on;
-        
-        # Проксируем трафик
-        proxy_pass \$backend;
-        
-        # Передаем реальный IP клиента
-        proxy_protocol on;
-    }
-}
-EOF
 
 cat > /etc/nginx/sites-available/sni.conf <<EOF
 server {
