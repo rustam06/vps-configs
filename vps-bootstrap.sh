@@ -249,40 +249,54 @@ modprobe tcp_bbr 2>/dev/null || true
 echo tcp_bbr > /etc/modules-load.d/bbr.conf
 
 cat > /etc/sysctl.d/99-proxy.conf <<'EOF'
-# BBR + fq — главный выигрыш для прокси на длинном канале
+# /etc/sysctl.d/99-vless-reality.conf
+
+### Congestion control — главный выигрыш для прокси на длинных/нестабильных каналах
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 
-# 16 МБ: хватает на ~1 Гбит/с при RTT 100 мс. Это потолок автотюнинга
-# на сокет, ставить больше на VPS с 1-2 ГБ RAM нет смысла.
+### Буферы — потолок автотюнинга ~1 Гбит/с при RTT 100 мс, для 2 ГБ RAM достаточно
 net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
 net.ipv4.tcp_rmem = 4096 262144 16777216
 net.ipv4.tcp_wmem = 4096 262144 16777216
 
+### Очереди/backlog под много одновременных соединений
 net.core.somaxconn = 8192
 net.core.netdev_max_backlog = 16384
 net.ipv4.tcp_max_syn_backlog = 8192
+net.ipv4.tcp_syncookies = 1
 
+### Поведение TCP для профиля "прокси": короткие рывки, много сессий
 net.ipv4.tcp_slow_start_after_idle = 0
 net.ipv4.tcp_mtu_probing = 1
 net.ipv4.tcp_fin_timeout = 15
-
-# Xray открывает исходящее соединение на каждый запрос. Диапазона по
-# умолчанию (32768-60999) при активном использовании перестаёт хватать.
 net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_keepalive_time = 60
+net.ipv4.tcp_keepalive_intvl = 30
+net.ipv4.tcp_keepalive_probes = 5
+
+### Xray открывает исходящее соединение на каждый запрос —
+### дефолтного диапазона портов (32768-60999) не хватает
 net.ipv4.ip_local_port_range = 10240 65535
 
-# Без этого при паре тысяч одновременных соединений появляется
-# "nf_conntrack: table full" в dmesg и необъяснимые обрывы у клиентов.
+### conntrack — без этого при паре тысяч соединений в dmesg вылезает
+### "nf_conntrack: table full" и клиентов рвёт без видимой причины
 net.netfilter.nf_conntrack_max = 262144
 net.netfilter.nf_conntrack_tcp_timeout_established = 3600
 net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
 
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
+### Security hardening (all + default — на случай новых интерфейсов: wg, docker0 и т.п.)
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
 net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
 
+### Память
 vm.swappiness = 10
 EOF
 
