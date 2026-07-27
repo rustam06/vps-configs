@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 #  Первичная настройка VPS под VLESS Reality
-#  Цель: Ubuntu 22.04+ / Debian 12+ (проверено на 24.04/25.x и Debian 13)
+#  Цель: Ubuntu 22.04+ / Debian 12+
 #
 #  ЗАПУСК:  wget -O bootstrap.sh <url> && chmod +x bootstrap.sh && sudo ./bootstrap.sh
 #  НЕ через `curl | bash` — скрипт интерактивный, stdin будет занят пайпом.
@@ -9,17 +9,21 @@
 #  ЗАЩИТА ОТ ЛОК-АУТА:
 #  sshd слушает СРАЗУ два порта — 22 и новый. Порт 22 закрывается только
 #  вручную, командой `sudo ssh-confirm`, после того как вы убедились, что
-#  вход на новый порт работает. Поэтому обрыв связи посреди работы скрипта
-#  ничем не грозит: в худшем случае всё останется как было.
+#  вход на новый порт работает. Обрыв связи посреди работы скрипта ничем
+#  не грозит: в худшем случае всё останется как было.
+#
+#  Скрипт задаёт ровно 4 вопроса: имя пользователя, пароль для sudo,
+#  публичный ключ (если его ещё нет) и номер порта. Всё остальное —
+#  безопасные значения по умолчанию.
 # ============================================================================
 
 set -Eeuo pipefail
 
-G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; C='\033[0;36m'; B='\033[1m'; N='\033[0m'
-log()  { echo -e "${G}[+]${N} $*"; }
-warn() { echo -e "${Y}[!]${N} $*"; }
-err()  { echo -e "${R}[x]${N} $*"; }
-hdr()  { echo; echo -e "${C}${B}=== $* ===${N}"; }
+G=$'\e[0;32m'; Y=$'\e[1;33m'; R=$'\e[0;31m'; C=$'\e[0;36m'; B=$'\e[1m'; N=$'\e[0m'
+log()  { echo "${G}[+]${N} $*"; }
+warn() { echo "${Y}[!]${N} $*"; }
+err()  { echo "${R}[x]${N} $*"; }
+hdr()  { echo; echo "${C}${B}=== $* ===${N}"; }
 
 trap 'err "Прервано на строке $LINENO. Порт 22 остался открытым — доступ не потерян."' ERR
 
@@ -29,9 +33,17 @@ ask()  { read -rp  "$1" "$2" || { err "Ввод прерван."; exit 1; }; }
 asks() { read -rsp "$1" "$2" || { echo; err "Ввод прерван."; exit 1; }; echo; }
 
 SSHD_CONF="/etc/ssh/sshd_config"
-SSHD_DROPIN="/etc/ssh/sshd_config.d/01-hardening.conf"
+DROPIN="/etc/ssh/sshd_config.d/00-hardening.conf"
 BACKUP="/root/.bootstrap-backup-$(date +%Y%m%d-%H%M%S)"
 CONFIRM="/usr/local/sbin/ssh-confirm"
+
+rollback_ssh() {
+    err "Откатываю конфигурацию SSH — порт 22 продолжает работать."
+    rm -f "$DROPIN"
+    cp -a "$BACKUP/sshd_config" "$SSHD_CONF"
+    systemctl restart ssh.service 2>/dev/null || true
+    exit 1
+}
 
 # ============================================================================
 hdr "0. Предполётные проверки"
@@ -40,8 +52,8 @@ hdr "0. Предполётные проверки"
 [[ -t 0 ]] || { err "stdin не терминал. Скачайте файл и запустите локально."; exit 1; }
 command -v apt-get >/dev/null || { err "Только Debian/Ubuntu."; exit 1; }
 
-# Include появился в openssh 8.2: Ubuntu 22.04+ и Debian 12+. Если его нет —
-# ОС старше, и drop-in был бы молча проигнорирован (sshd -t это не ловит).
+# Include появился в openssh 8.2 (Ubuntu 22.04+, Debian 12+). Без него
+# drop-in был бы молча проигнорирован, и `sshd -t` этого не заметит.
 grep -qE '^\s*Include\s+/etc/ssh/sshd_config\.d/' "$SSHD_CONF" || {
     err "В sshd_config нет директивы Include — ОС старше заявленной."
     err "Нужен Ubuntu 22.04+ или Debian 12+. Прерываюсь."; exit 1; }
@@ -51,17 +63,23 @@ cp -a "$SSHD_CONF" "$BACKUP/sshd_config"
 log "Бэкап sshd_config: $BACKUP"
 
 export DEBIAN_FRONTEND=noninteractive
-log "Обновляю индексы пакетов..."
+# Без этого needrestart на Ubuntu 22.04+ выкидывает полноэкранный диалог
+# «какие сервисы перезапустить» прямо посреди apt-установки.
+export NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
+
+log "Устанавливаю пакеты..."
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl iproute2 ufw >/dev/null
+apt-get install -y -qq sudo ufw curl ca-certificates iproute2 \
+                      openssh-client unattended-upgrades
 
 # ============================================================================
 hdr "1. Синхронизация времени"
 
-# Reality проверяет TLS-таймстемпы: расхождение больше 1-2 минут ломает
-# handshake, и клиент просто "не подключается" без внятной ошибки.
+# Для Reality критичность времени часто преувеличивают (проверка метки
+# управляется maxTimeDiff и по умолчанию выключена), но корректные часы
+# нужны для TLS к целевому SNI-сайту, логов и автообновлений.
 timedatectl set-ntp true 2>/dev/null || {
-    apt-get install -y -qq systemd-timesyncd >/dev/null
+    apt-get install -y -qq systemd-timesyncd
     systemctl enable --now systemd-timesyncd >/dev/null 2>&1 || true
     timedatectl set-ntp true 2>/dev/null || true; }
 sleep 2
@@ -76,8 +94,8 @@ hdr "2. Пользователь с sudo"
 
 while :; do
     ask "Имя пользователя (например, admin): " USERNAME
-    [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { err "Только a-z, 0-9, _ и -"; continue; }
-    break
+    [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && break
+    err "Только a-z, 0-9, _ и -, начинаться должно с буквы."
 done
 
 if id "$USERNAME" &>/dev/null; then
@@ -88,38 +106,25 @@ else
 fi
 usermod -aG sudo "$USERNAME"
 
-# --- Пароль для sudo ---
-# adduser --disabled-password ставит '!' в поле пароля. Без пароля или
-# NOPASSWD sudo не сработает вообще. На вход по SSH это не влияет — он
-# в любом случае будет только по ключу.
+# adduser --disabled-password ставит '!' в поле пароля, и sudo без пароля
+# не сработает. На вход по SSH это не влияет — он в любом случае по ключу.
 echo
-echo -e "${Y}Пароль нужен только для sudo. Вход по SSH — исключительно по ключу.${N}"
-echo -e "${Y}Пустой ввод = включить NOPASSWD (компрометация юзера = сразу root).${N}"
+echo "${Y}Пароль нужен только для sudo. Вход по SSH — исключительно по ключу.${N}"
 while :; do
-    asks "Пароль (Enter = NOPASSWD): " p1
-    if [[ -z "$p1" ]]; then
-        ask "Точно включить NOPASSWD? (y/N): " a
-        [[ "$a" =~ ^[yY]$ ]] || continue
-        printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$USERNAME" > /tmp/.sudo.chk
-        if visudo -c -f /tmp/.sudo.chk &>/dev/null; then
-            install -m 440 /tmp/.sudo.chk "/etc/sudoers.d/90-$USERNAME-nopasswd"
-            log "NOPASSWD включён."
-        else
-            err "sudoers невалиден, правило НЕ добавлено. Задайте пароль: passwd $USERNAME"
-        fi
-        rm -f /tmp/.sudo.chk; break
-    fi
+    asks "Пароль для sudo (минимум 8 символов): " p1
+    (( ${#p1} >= 8 )) || { err "Слишком короткий."; unset p1; continue; }
     asks "Повторите: " p2
-    [[ "$p1" == "$p2" ]] || { err "Не совпадают."; continue; }
-    (( ${#p1} >= 8 )) || { err "Минимум 8 символов."; continue; }
-    echo "$USERNAME:$p1" | chpasswd; unset p1 p2
-    log "Пароль установлен."; break
+    [[ "$p1" == "$p2" ]] || { err "Не совпадают."; unset p1 p2; continue; }
+    echo "$USERNAME:$p1" | chpasswd
+    unset p1 p2
+    log "Пароль установлен."
+    break
 done
 
 # --- SSH-ключ ---
 USER_HOME=$(getent passwd "$USERNAME" | cut -d: -f6)
 KEYS="$USER_HOME/.ssh/authorized_keys"
-mkdir -p "$USER_HOME/.ssh"
+install -d -m 700 -o "$USERNAME" -g "$USERNAME" "$USER_HOME/.ssh"
 
 # Проверяем самим ssh-keygen: grep '^ssh-' пропускает ecdsa-*, sk-ssh-*
 # и ключи с опциями впереди.
@@ -135,106 +140,111 @@ else
     warn "Валидных ключей не найдено. Вставьте ваш ПУБЛИЧНЫЙ ключ (~/.ssh/id_ed25519.pub):"
     while :; do
         ask "> " PUBKEY
-        printf '%s\n' "$PUBKEY" > /tmp/.pk.chk
-        if valid_key /tmp/.pk.chk; then
-            cat /tmp/.pk.chk >> "$KEYS"; rm -f /tmp/.pk.chk
-            log "Ключ принят: $(ssh-keygen -l -f "$KEYS" | tail -1)"; break
+        printf '%s\n' "$PUBKEY" > "/tmp/.pk.$$"
+        if valid_key "/tmp/.pk.$$"; then
+            cat "/tmp/.pk.$$" >> "$KEYS"; rm -f "/tmp/.pk.$$"
+            log "Ключ принят."
+            break
         fi
-        rm -f /tmp/.pk.chk; err "Не похоже на валидный публичный ключ."
+        rm -f "/tmp/.pk.$$"
+        err "Не похоже на валидный публичный ключ."
     done
 fi
 chown -R "$USERNAME:$USERNAME" "$USER_HOME/.ssh"
-chmod 700 "$USER_HOME/.ssh"; chmod 600 "$KEYS"
+chmod 600 "$KEYS"
+
+# Парольный вход отключается безусловно, поэтому без рабочего ключа дальше нельзя.
+valid_key "$KEYS" || { err "Ключ не подтверждён — прерываюсь, ничего не меняя в SSH."; exit 1; }
+log "Ключ: $(ssh-keygen -l -f "$KEYS" | tail -1)"
 
 # ============================================================================
 hdr "3. Конфигурация SSH"
 
-# Верхняя граница 32767, а не 65535: выше начинается диапазон эфемерных
-# портов (net.ipv4.ip_local_port_range, по умолчанию 32768-60999). Порт
-# оттуда может быть занят исходящим соединением Xray, и тогда sshd при
-# рестарте получит "Address already in use".
+DEFPORT=$(shuf -i 20000-45000 -n 1)
 while :; do
-    ask "Новый SSH-порт (1024-32767, например 8516): " PORT
-    [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1024 && PORT <= 32767 )) \
-        || { err "Число от 1024 до 32767."; continue; }
-    (( PORT != 443 )) || { err "443 оставьте под Reality."; continue; }
-    ss -tlnH "( sport = :$PORT )" 2>/dev/null | grep -q . \
-        && { err "Порт $PORT уже занят."; continue; }
+    ask "Новый SSH-порт [$DEFPORT]: " PORT
+    PORT=${PORT:-$DEFPORT}
+    if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1024 || PORT > 65535 )); then
+        err "Число от 1024 до 65535."; continue
+    fi
+    if (( PORT == 443 )); then
+        err "443 оставьте под Reality."; continue
+    fi
+    if ss -tlnH "( sport = :$PORT )" | grep -q .; then
+        err "Порт $PORT уже занят."; continue
+    fi
     break
 done
 
-ask "Запретить вход root? (Y/n): " NO_ROOT
-ask "Отключить вход по паролю? (Y/n): " NO_PASS
-
-# Имя 01-*.conf важно: sshd берёт ПЕРВОЕ встреченное значение директивы,
+# Имя 00-*.conf важно: sshd берёт ПЕРВОЕ встреченное значение директивы,
 # поэтому наш файл выигрывает у 50-cloud-init.conf, который на облачных
 # образах любит ставить PasswordAuthentication yes.
 sed -i 's/^[[:space:]]*Port[[:space:]]/#Port /' "$SSHD_CONF"
 
-cat > "$SSHD_DROPIN" <<EOF
+cat > "$DROPIN" <<EOF
 # Создано bootstrap-скриптом.
 # Порт 22 временный — убирается командой: sudo ssh-confirm
 Port 22
 Port $PORT
 
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+
+# Если позже заведёте второго администратора — допишите его сюда.
+AllowUsers $USERNAME
+
 MaxAuthTries 3
 LoginGraceTime 30
-MaxStartups 10:30:60
-
 X11Forwarding no
 AllowAgentForwarding no
 ClientAliveInterval 300
 ClientAliveCountMax 2
 EOF
+chmod 644 "$DROPIN"
 
-if [[ ! "$NO_ROOT" =~ ^[nN]$ ]]; then
-    echo "PermitRootLogin no" >> "$SSHD_DROPIN"; log "root-вход запрещён."
+sshd -t || { err "Ошибка синтаксиса конфига SSH."; rollback_ssh; }
+
+# `sshd -t` проверяет только синтаксис. Смотрим ЭФФЕКТИВНЫЙ конфиг: так
+# видно, если какой-то чужой drop-in или ListenAddress перебил наши значения.
+EFF=$(sshd -T -C "user=$USERNAME,host=localhost,addr=127.0.0.1" 2>/dev/null || sshd -T 2>/dev/null || true)
+if [[ -n "$EFF" ]]; then
+    for chk in "port 22" "port $PORT" "permitrootlogin no" "passwordauthentication no"; do
+        grep -qx "$chk" <<<"$EFF" || {
+            err "Эффективный конфиг не содержит '$chk' — что-то его перебивает."
+            rollback_ssh; }
+    done
+    log "Эффективный конфиг проверен: оба порта, root off, пароли off."
 else
-    echo "PermitRootLogin prohibit-password" >> "$SSHD_DROPIN"; warn "root оставлен (по ключу)."
+    warn "Не удалось получить вывод sshd -T — проверка эффективного конфига пропущена."
 fi
-
-if [[ ! "$NO_PASS" =~ ^[nN]$ ]]; then
-    # Проверяем ключ именно у того пользователя, под которым будем заходить.
-    if valid_key "$KEYS"; then
-        cat >> "$SSHD_DROPIN" <<'EOF'
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-PubkeyAuthentication yes
-EOF
-        log "Парольный вход отключён (ключ у '$USERNAME' подтверждён)."
-    else
-        err "Ключ не подтверждён — парольный вход ОСТАВЛЕН."
-    fi
-else
-    warn "Парольный вход оставлен включённым."
-fi
-chmod 644 "$SSHD_DROPIN"
-
-sshd -t || { err "Ошибка конфига SSH, откатываю."; cp -a "$BACKUP/sshd_config" "$SSHD_CONF"; rm -f "$SSHD_DROPIN"; exit 1; }
-log "Синтаксис конфига корректен."
 
 # ============================================================================
 hdr "4. Firewall (UFW)"
+
+if ss -tlnH "( sport = :443 )" | grep -q .; then
+    warn "Порт 443 уже кем-то занят — Xray не сможет стартовать:"
+    ss -tlnp "( sport = :443 )" || true
+fi
 
 ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
 # `limit` = не больше 6 подключений за 30 сек с одного IP. Этого достаточно
 # против брутфорса, отдельный fail2ban при входе по ключу ничего не добавляет.
-ufw limit 22/tcp comment 'SSH old' >/dev/null
-ufw limit "$PORT/tcp" comment 'SSH new' >/dev/null
-ufw allow 443/tcp comment 'Reality' >/dev/null
+ufw limit 22/tcp        comment 'SSH temp' >/dev/null
+ufw limit "$PORT"/tcp   comment 'SSH'      >/dev/null
+ufw allow 443/tcp       comment 'Reality'  >/dev/null
 log "Открыты 22/tcp, $PORT/tcp (rate-limit) и 443/tcp."
 
-ask "Дополнительные порты через пробел (Enter — пропустить): " EXTRA
-for p in $EXTRA; do
-    [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 )) \
-        && { ufw allow "$p/tcp" >/dev/null; log "Открыт $p/tcp"; } \
-        || err "'$p' — некорректный порт, пропускаю."
-done
-
 # ============================================================================
-hdr "5. Сетевой тюнинг"
+hdr "5. Сетевые параметры"
 
+# conntrack надо загрузить ДО sysctl, иначе его ключей просто не существует
+# и настройки молча не применятся.
+echo nf_conntrack > /etc/modules-load.d/conntrack.conf
+echo "options nf_conntrack hashsize=32768" > /etc/modprobe.d/nf_conntrack.conf
+modprobe nf_conntrack 2>/dev/null || true
 modprobe tcp_bbr 2>/dev/null || true
 echo tcp_bbr > /etc/modules-load.d/bbr.conf
 
@@ -243,11 +253,12 @@ cat > /etc/sysctl.d/99-proxy.conf <<'EOF'
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 
-# 32 МБ: при RTT 200 мс буфер в 4 МБ упирает окно в ~160 Мбит/с
-net.core.rmem_max = 33554432
-net.core.wmem_max = 33554432
-net.ipv4.tcp_rmem = 4096 262144 33554432
-net.ipv4.tcp_wmem = 4096 262144 33554432
+# 16 МБ: хватает на ~1 Гбит/с при RTT 100 мс. Это потолок автотюнинга
+# на сокет, ставить больше на VPS с 1-2 ГБ RAM нет смысла.
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 262144 16777216
+net.ipv4.tcp_wmem = 4096 262144 16777216
 
 net.core.somaxconn = 8192
 net.core.netdev_max_backlog = 16384
@@ -256,12 +267,18 @@ net.ipv4.tcp_max_syn_backlog = 8192
 net.ipv4.tcp_slow_start_after_idle = 0
 net.ipv4.tcp_mtu_probing = 1
 net.ipv4.tcp_fin_timeout = 15
-net.ipv4.tcp_synack_retries = 2
 
-# loose (2), а не strict (1): строгий режим ломает асимметричную
-# маршрутизацию, если позже добавите WireGuard/AmneziaWG
-net.ipv4.conf.all.rp_filter = 2
-net.ipv4.conf.default.rp_filter = 2
+# Xray открывает исходящее соединение на каждый запрос. Диапазона по
+# умолчанию (32768-60999) при активном использовании перестаёт хватать.
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.ip_local_port_range = 10240 65535
+
+# Без этого при паре тысяч одновременных соединений появляется
+# "nf_conntrack: table full" в dmesg и необъяснимые обрывы у клиентов.
+net.netfilter.nf_conntrack_max = 262144
+net.netfilter.nf_conntrack_tcp_timeout_established = 3600
+net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.all.accept_source_route = 0
@@ -269,72 +286,92 @@ net.ipv4.conf.all.accept_source_route = 0
 vm.swappiness = 10
 EOF
 
-sysctl --system >/dev/null 2>&1
+# SSH-порт исключаем из диапазона исходящих: иначе однажды его займёт
+# исходящее соединение Xray, и sshd при рестарте не сможет забиндиться.
+echo "net.ipv4.ip_local_reserved_ports = $PORT" >> /etc/sysctl.d/99-proxy.conf
+
+sysctl --system >/dev/null || warn "Часть параметров не применилась, см. вывод выше."
+
 CC=$(sysctl -n net.ipv4.tcp_congestion_control)
-[[ "$CC" == bbr ]] && log "BBR активен (qdisc: $(sysctl -n net.core.default_qdisc))" \
-                   || warn "BBR не активировался (текущий: $CC)"
+if [[ "$CC" == bbr ]]; then
+    log "BBR активен (qdisc: $(sysctl -n net.core.default_qdisc))"
+else
+    warn "BBR не активировался (текущий: $CC)"
+fi
 
 # IPv6 намеренно НЕ отключается: многие SNI-цели для Reality резолвятся
 # в AAAA, и без IPv6 получаются плавающие обрывы.
-log "IPv6 оставлен включённым (нужен для SNI-целей Reality)."
-
-# Лимит дескрипторов НЕ трогаем глобально: официальный xray.service уже
-# содержит LimitNOFILE=1000000, а поднятие soft-лимита для всех юнитов
-# ломает софт, который перебирает fd до RLIMIT_NOFILE.
+#
+# Лимит дескрипторов тоже не трогаем: официальный xray.service уже
+# содержит LimitNOFILE=1000000.
 
 # ============================================================================
-hdr "6. Swap и автообновления"
+hdr "6. Swap, логи, автообновления"
 
 RAM=$(free -m | awk '/^Mem:/{print $2}')
 SWAP=$(free -m | awk '/^Swap:/{print $2}')
 if (( SWAP > 0 )); then
-    log "Swap уже есть: ${SWAP}MB"
-elif (( RAM < 2048 )); then
-    ask "RAM ${RAM}MB, создать swap 2GB? (Y/n): " a
-    if [[ ! "$a" =~ ^[nN]$ ]]; then
-        # Только dd: fallocate оставляет дырки, и swapon на XFS такой файл
-        # отвергает. На BTRFS нужен ещё и NOCOW, поэтому swapon под if —
-        # иначе его провал уронил бы весь скрипт через ERR-трап.
-        dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
-        chmod 600 /swapfile; mkswap /swapfile >/dev/null
-        if swapon /swapfile 2>/dev/null; then
-            grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-            log "Swap 2GB создан."
-        else
-            rm -f /swapfile
-            warn "swapon не сработал (вероятно BTRFS/XFS) — пропускаю, некритично."
-        fi
-    fi
+    log "Swap уже есть: ${SWAP} МБ"
+elif (( RAM >= 2048 )); then
+    log "RAM ${RAM} МБ — swap не обязателен."
 else
-    log "RAM ${RAM}MB — swap не обязателен."
+    # Только dd: fallocate оставляет дырки, и swapon на XFS такой файл
+    # отвергает. На BTRFS нужен ещё и NOCOW, поэтому swapon под if —
+    # иначе его провал уронил бы весь скрипт через ERR-трап.
+    dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+    if swapon /swapfile 2>/dev/null; then
+        grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        log "Swap 2 ГБ создан (RAM ${RAM} МБ)."
+    else
+        rm -f /swapfile
+        warn "swapon не сработал (вероятно BTRFS/XFS) — пропускаю, некритично."
+    fi
 fi
 
-ask "Включить unattended-upgrades? (Y/n): " a
-if [[ ! "$a" =~ ^[nN]$ ]]; then
-    apt-get install -y -qq unattended-upgrades >/dev/null
-    cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+# Прокси пишет много логов, а диск на VPS обычно 20-25 ГБ.
+mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nSystemMaxUse=200M\n' > /etc/systemd/journald.conf.d/00-size.conf
+systemctl restart systemd-journald
+log "Журнал ограничен 200 МБ."
+
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
-    systemctl enable --now unattended-upgrades >/dev/null 2>&1 || true
-    log "Автообновления безопасности включены."
-fi
+systemctl enable --now unattended-upgrades >/dev/null 2>&1 || true
+log "Автообновления безопасности включены."
 
 # ============================================================================
 hdr "7. Применение"
 
 cat > "$CONFIRM" <<CONFIRM_EOF
 #!/usr/bin/env bash
-# Закрывает порт 22 после того, как вы проверили вход на новый порт.
+# Закрывает временный порт 22. Запускать только после того, как вы
+# убедились, что вход на порт $PORT работает.
 set -e
 [[ \$EUID -eq 0 ]] || { echo "Запустите через sudo"; exit 1; }
-sed -i '/^Port 22\$/d' "$SSHD_DROPIN"
-sshd -t || { echo "[x] Ошибка конфига — порт 22 оставлен."; exit 1; }
+
+# .bak не подпадает под Include (*.conf), поэтому лежать рядом безопасно.
+cp -a "$DROPIN" "$DROPIN.bak"
+restore() { mv -f "$DROPIN.bak" "$DROPIN"; systemctl restart ssh.service; }
+
+sed -i '/^Port 22\$/d' "$DROPIN"
+
+if ! sshd -t; then
+    echo "[x] Ошибка конфига — откат, порт 22 остаётся."; restore; exit 1
+fi
 systemctl restart ssh.service
+sleep 1
+if ! ss -tlnH "( sport = :$PORT )" | grep -q .; then
+    echo "[x] sshd не слушает $PORT — откат, порт 22 остаётся."; restore; exit 1
+fi
+
 ufw delete limit 22/tcp >/dev/null 2>&1 || true
 ufw delete allow 22/tcp >/dev/null 2>&1 || true
-rm -f "$CONFIRM"
+rm -f "$DROPIN.bak" "$CONFIRM"
 echo "[+] Готово. SSH только на порту $PORT."
 CONFIRM_EOF
 chmod 700 "$CONFIRM"
@@ -349,35 +386,37 @@ systemctl enable ssh.service &>/dev/null || true
 systemctl restart ssh.service
 sleep 2
 
-if ss -tlnH "( sport = :$PORT )" 2>/dev/null | grep -q .; then
+if ss -tlnH "( sport = :$PORT )" | grep -q .; then
     log "sshd слушает порт $PORT."
 else
-    err "sshd НЕ слушает $PORT! Откатываю конфиг, порт 22 остаётся рабочим."
-    rm -f "$SSHD_DROPIN"; cp -a "$BACKUP/sshd_config" "$SSHD_CONF"
-    systemctl restart ssh.service; exit 1
+    err "sshd НЕ слушает $PORT!"
+    rollback_ssh
+fi
+if ! ss -tlnH "( sport = :22 )" | grep -q .; then
+    warn "sshd не слушает 22 — НЕ закрывайте текущую сессию, пока не проверите новый порт."
 fi
 
-IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')
+IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
 
 cat <<FINAL
 
-$(echo -e "${G}${B}")=========== НАСТРОЙКА ПРИМЕНЕНА ===========$(echo -e "${N}")
+${G}${B}=========== НАСТРОЙКА ПРИМЕНЕНА ===========${N}
 
-Порт 22 пока ОТКРЫТ — залочить себя нельзя. Не закрывая эту сессию:
+Порт 22 пока ОТКРЫТ — залочить себя нельзя.
+${B}Не закрывая эту сессию${N}, откройте новый терминал:
 
-  1) $(echo -e "${C}")ssh -p $PORT $USERNAME@${IP:-<IP>}$(echo -e "${N}")
-  2) $(echo -e "${C}")sudo whoami$(echo -e "${N}")
-  3) $(echo -e "${C}")sudo ssh-confirm$(echo -e "${N}")   ← закроет порт 22
+  1) ${C}ssh -p $PORT $USERNAME@${IP:-<IP-сервера>}${N}
+  2) ${C}sudo whoami${N}
+  3) ${C}sudo ssh-confirm${N}   ← закроет порт 22
 
-Если шаг 3 не выполнить, ничего страшного не произойдёт: порт 22
-просто останется открытым, как и был.
+Если шаг 3 не выполнить, ничего страшного: порт 22 просто останется
+открытым, как и был.
 
-  Пользователь:   $USERNAME (sudo)
-  SSH:            22 (временно) + $PORT
-  Пароли по SSH:  $([[ ! "$NO_PASS" =~ ^[nN]$ ]] && echo отключены || echo включены)
-  Root-вход:      $([[ ! "$NO_ROOT" =~ ^[nN]$ ]] && echo запрещён || echo "только по ключу")
-  BBR:            $CC
-  Бэкап:          $BACKUP
+  Пользователь:  $USERNAME (sudo по паролю, SSH только по ключу)
+  SSH:           22 (временно) + $PORT
+  Открыто:       22/tcp, $PORT/tcp, 443/tcp
+  BBR:           $CC
+  Бэкап:         $BACKUP
 
 Дальше — Xray (443/tcp уже открыт):
   bash -c "\$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
