@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 #  Первичная настройка VPS под VLESS Reality
-#  Цель: Ubuntu 24.04+ / Debian 13+
+#  Цель: Ubuntu 22.04+ / Debian 12+ (проверено на 24.04/25.x и Debian 13)
 #
 #  ЗАПУСК:  wget -O bootstrap.sh <url> && chmod +x bootstrap.sh && sudo ./bootstrap.sh
 #  НЕ через `curl | bash` — скрипт интерактивный, stdin будет занят пайпом.
@@ -23,6 +23,11 @@ hdr()  { echo; echo -e "${C}${B}=== $* ===${N}"; }
 
 trap 'err "Прервано на строке $LINENO. Порт 22 остался открытым — доступ не потерян."' ERR
 
+# Голый `read` под `set -e` роняет скрипт при Ctrl-D: EOF возвращает 1 и
+# срабатывает ERR-трап посреди диалога. Обёртки дают внятный выход.
+ask()  { read -rp  "$1" "$2" || { err "Ввод прерван."; exit 1; }; }
+asks() { read -rsp "$1" "$2" || { echo; err "Ввод прерван."; exit 1; }; echo; }
+
 SSHD_CONF="/etc/ssh/sshd_config"
 SSHD_DROPIN="/etc/ssh/sshd_config.d/01-hardening.conf"
 BACKUP="/root/.bootstrap-backup-$(date +%Y%m%d-%H%M%S)"
@@ -35,11 +40,11 @@ hdr "0. Предполётные проверки"
 [[ -t 0 ]] || { err "stdin не терминал. Скачайте файл и запустите локально."; exit 1; }
 command -v apt-get >/dev/null || { err "Только Debian/Ubuntu."; exit 1; }
 
-# В Ubuntu 22.04+ и Debian 12+ Include есть из коробки. Если его нет —
-# значит ОС не та, что заявлена, и drop-in будет молча проигнорирован.
+# Include появился в openssh 8.2: Ubuntu 22.04+ и Debian 12+. Если его нет —
+# ОС старше, и drop-in был бы молча проигнорирован (sshd -t это не ловит).
 grep -qE '^\s*Include\s+/etc/ssh/sshd_config\.d/' "$SSHD_CONF" || {
     err "В sshd_config нет директивы Include — ОС старше заявленной."
-    err "Скрипт рассчитан на Ubuntu 24+/Debian 13. Прерываюсь."; exit 1; }
+    err "Нужен Ubuntu 22.04+ или Debian 12+. Прерываюсь."; exit 1; }
 
 mkdir -p "$BACKUP" /etc/ssh/sshd_config.d
 cp -a "$SSHD_CONF" "$BACKUP/sshd_config"
@@ -70,7 +75,7 @@ fi
 hdr "2. Пользователь с sudo"
 
 while :; do
-    read -rp "Имя пользователя (например, admin): " USERNAME
+    ask "Имя пользователя (например, admin): " USERNAME
     [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { err "Только a-z, 0-9, _ и -"; continue; }
     break
 done
@@ -91,9 +96,9 @@ echo
 echo -e "${Y}Пароль нужен только для sudo. Вход по SSH — исключительно по ключу.${N}"
 echo -e "${Y}Пустой ввод = включить NOPASSWD (компрометация юзера = сразу root).${N}"
 while :; do
-    read -rsp "Пароль (Enter = NOPASSWD): " p1; echo
+    asks "Пароль (Enter = NOPASSWD): " p1
     if [[ -z "$p1" ]]; then
-        read -rp "Точно включить NOPASSWD? (y/N): " a
+        ask "Точно включить NOPASSWD? (y/N): " a
         [[ "$a" =~ ^[yY]$ ]] || continue
         printf '%s ALL=(ALL) NOPASSWD: ALL\n' "$USERNAME" > /tmp/.sudo.chk
         if visudo -c -f /tmp/.sudo.chk &>/dev/null; then
@@ -104,7 +109,7 @@ while :; do
         fi
         rm -f /tmp/.sudo.chk; break
     fi
-    read -rsp "Повторите: " p2; echo
+    asks "Повторите: " p2
     [[ "$p1" == "$p2" ]] || { err "Не совпадают."; continue; }
     (( ${#p1} >= 8 )) || { err "Минимум 8 символов."; continue; }
     echo "$USERNAME:$p1" | chpasswd; unset p1 p2
@@ -129,7 +134,7 @@ elif valid_key /root/.ssh/authorized_keys; then
 else
     warn "Валидных ключей не найдено. Вставьте ваш ПУБЛИЧНЫЙ ключ (~/.ssh/id_ed25519.pub):"
     while :; do
-        read -rp "> " PUBKEY
+        ask "> " PUBKEY
         printf '%s\n' "$PUBKEY" > /tmp/.pk.chk
         if valid_key /tmp/.pk.chk; then
             cat /tmp/.pk.chk >> "$KEYS"; rm -f /tmp/.pk.chk
@@ -149,7 +154,7 @@ hdr "3. Конфигурация SSH"
 # оттуда может быть занят исходящим соединением Xray, и тогда sshd при
 # рестарте получит "Address already in use".
 while :; do
-    read -rp "Новый SSH-порт (1024-32767, например 8516): " PORT
+    ask "Новый SSH-порт (1024-32767, например 8516): " PORT
     [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1024 && PORT <= 32767 )) \
         || { err "Число от 1024 до 32767."; continue; }
     (( PORT != 443 )) || { err "443 оставьте под Reality."; continue; }
@@ -158,8 +163,8 @@ while :; do
     break
 done
 
-read -rp "Запретить вход root? (Y/n): " NO_ROOT
-read -rp "Отключить вход по паролю? (Y/n): " NO_PASS
+ask "Запретить вход root? (Y/n): " NO_ROOT
+ask "Отключить вход по паролю? (Y/n): " NO_PASS
 
 # Имя 01-*.conf важно: sshd берёт ПЕРВОЕ встреченное значение директивы,
 # поэтому наш файл выигрывает у 50-cloud-init.conf, который на облачных
@@ -220,7 +225,7 @@ ufw limit "$PORT/tcp" comment 'SSH new' >/dev/null
 ufw allow 443/tcp comment 'Reality' >/dev/null
 log "Открыты 22/tcp, $PORT/tcp (rate-limit) и 443/tcp."
 
-read -rp "Дополнительные порты через пробел (Enter — пропустить): " EXTRA
+ask "Дополнительные порты через пробел (Enter — пропустить): " EXTRA
 for p in $EXTRA; do
     [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 )) \
         && { ufw allow "$p/tcp" >/dev/null; log "Открыт $p/tcp"; } \
@@ -273,9 +278,9 @@ CC=$(sysctl -n net.ipv4.tcp_congestion_control)
 # в AAAA, и без IPv6 получаются плавающие обрывы.
 log "IPv6 оставлен включённым (нужен для SNI-целей Reality)."
 
-# Xray открывает много сокетов
-mkdir -p /etc/systemd/system.conf.d
-printf '[Manager]\nDefaultLimitNOFILE=1048576\n' > /etc/systemd/system.conf.d/limits.conf
+# Лимит дескрипторов НЕ трогаем глобально: официальный xray.service уже
+# содержит LimitNOFILE=1000000, а поднятие soft-лимита для всех юнитов
+# ломает софт, который перебирает fd до RLIMIT_NOFILE.
 
 # ============================================================================
 hdr "6. Swap и автообновления"
@@ -285,18 +290,26 @@ SWAP=$(free -m | awk '/^Swap:/{print $2}')
 if (( SWAP > 0 )); then
     log "Swap уже есть: ${SWAP}MB"
 elif (( RAM < 2048 )); then
-    read -rp "RAM ${RAM}MB, создать swap 2GB? (Y/n): " a
+    ask "RAM ${RAM}MB, создать swap 2GB? (Y/n): " a
     if [[ ! "$a" =~ ^[nN]$ ]]; then
-        fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
-        chmod 600 /swapfile; mkswap /swapfile >/dev/null; swapon /swapfile
-        grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-        log "Swap 2GB создан."
+        # Только dd: fallocate оставляет дырки, и swapon на XFS такой файл
+        # отвергает. На BTRFS нужен ещё и NOCOW, поэтому swapon под if —
+        # иначе его провал уронил бы весь скрипт через ERR-трап.
+        dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+        chmod 600 /swapfile; mkswap /swapfile >/dev/null
+        if swapon /swapfile 2>/dev/null; then
+            grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+            log "Swap 2GB создан."
+        else
+            rm -f /swapfile
+            warn "swapon не сработал (вероятно BTRFS/XFS) — пропускаю, некритично."
+        fi
     fi
 else
     log "RAM ${RAM}MB — swap не обязателен."
 fi
 
-read -rp "Включить unattended-upgrades? (Y/n): " a
+ask "Включить unattended-upgrades? (Y/n): " a
 if [[ ! "$a" =~ ^[nN]$ ]]; then
     apt-get install -y -qq unattended-upgrades >/dev/null
     cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
