@@ -97,7 +97,6 @@ while :; do
     [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && break
     err "Только a-z, 0-9, _ и -, начинаться должно с буквы."
 done
-
 if id "$USERNAME" &>/dev/null; then
     log "Пользователь '$USERNAME' уже существует — использую его."
 else
@@ -106,20 +105,25 @@ else
 fi
 usermod -aG sudo "$USERNAME"
 
-# adduser --disabled-password ставит '!' в поле пароля, и sudo без пароля
-# не сработает. На вход по SSH это не влияет — он в любом случае по ключу.
+# Разрешаем sudo без пароля только для этого пользователя.
+# Вход по SSH — исключительно по ключу, поле пароля остаётся '!' (заблокировано).
 echo
-echo "${Y}Пароль нужен только для sudo. Вход по SSH — исключительно по ключу.${N}"
-while :; do
-    asks "Пароль для sudo (минимум 8 символов): " p1
-    (( ${#p1} >= 8 )) || { err "Слишком короткий."; unset p1; continue; }
-    asks "Повторите: " p2
-    [[ "$p1" == "$p2" ]] || { err "Не совпадают."; unset p1 p2; continue; }
-    echo "$USERNAME:$p1" | chpasswd
-    unset p1 p2
-    log "Пароль установлен."
-    break
-done
+echo "${Y}Настраиваю sudo без пароля для '$USERNAME'. Вход по SSH — только по ключу.${N}"
+
+SUDOERS_FILE="/etc/sudoers.d/90-${USERNAME}-nopasswd"
+TMP_SUDOERS="$(mktemp)"
+
+echo "${USERNAME} ALL=(ALL) NOPASSWD: ALL" > "$TMP_SUDOERS"
+
+if visudo -c -f "$TMP_SUDOERS" >/dev/null 2>&1; then
+    install -m 0440 -o root -g root "$TMP_SUDOERS" "$SUDOERS_FILE"
+    rm -f "$TMP_SUDOERS"
+    log "Правило sudo без пароля добавлено в $SUDOERS_FILE."
+else
+    err "Ошибка синтаксиса sudoers — правило не применено."
+    rm -f "$TMP_SUDOERS"
+    exit 1
+fi
 
 # --- SSH-ключ ---
 USER_HOME=$(getent passwd "$USERNAME" | cut -d: -f6)
