@@ -232,16 +232,22 @@ if ss -tlnH "( sport = :443 )" | grep -q .; then
 fi
 ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
-# Доверенный IP — без рейт-лимита. Должно идти ДО правила limit,
-# иначе сработает limit (первое совпадение выигрывает).
-ufw allow from 161.104.46.85 to any port 2222 proto tcp \
-    comment 'SSH admin IP' >/dev/null
+
+read -r -p "Настраиваем сервер как remnanode? [y/N]: " ans < /dev/tty
+if [[ "${ans,,}" =~ ^y ]]; then
+    # Доступ к ноде только с IP панели. Идёт до limit-правил:
+    # UFW применяет первое совпавшее правило.
+    ufw allow from 161.104.46.85 to any port 2222 proto tcp \
+        comment 'Remnanode <- panel' >/dev/null
+    log "Открыт 2222/tcp для 161.104.46.85."
+fi
+
 # `limit` = не больше 6 подключений за 30 сек с одного IP. Этого достаточно
 # против брутфорса, отдельный fail2ban при входе по ключу ничего не добавляет.
 ufw limit 22/tcp        comment 'SSH temp' >/dev/null
 ufw limit "$PORT"/tcp   comment 'SSH'      >/dev/null
 ufw allow 443/tcp       comment 'Reality'  >/dev/null
-log "Открыты 22/tcp, $PORT/tcp (rate-limit), 443/tcp и 2222/tcp для 161.104.46.85."
+log "Открыты 22/tcp, $PORT/tcp (rate-limit) и 443/tcp."
 
 # ============================================================================
 hdr "5. Сетевые параметры"
