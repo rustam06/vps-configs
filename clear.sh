@@ -1,40 +1,62 @@
-#!/bin/bash
-# Остановить скрипт при любой ошибке
-set -e
-
+#!/usr/bin/env bash
+set -Eeuo pipefail
 export LC_ALL=C
+export DEBIAN_FRONTEND=noninteractive
 
-# Проверка, запущен ли скрипт от имени root
 if [ "$EUID" -ne 0 ]; then
-  echo "❌ Пожалуйста, запустите скрипт с правами root (sudo)."
+  echo "❌ Требуются права root (sudo)." >&2
   exit 1
 fi
 
-# Устанавливаем переменную окружения глобально для всего скрипта
-export DEBIAN_FRONTEND=noninteractive
+LOG="/var/log/vps-maintenance.log"
+exec > >(tee -a "$LOG") 2>&1
+trap 'echo "❌ Ошибка на строке $LINENO: $BASH_COMMAND"' ERR
 
-echo "🚀 Начало обслуживания системы..."
+echo "=== $(date "+%F %T") Начало обслуживания ==="
 
-# --- БЛОК ОБНОВЛЕНИЯ ---
+APT_OPTS=(
+  -y
+  -o Dpkg::Options::=--force-confdef
+  -o Dpkg::Options::=--force-confold
+  -o DPkg::Lock::Timeout=300
+)
+
 echo "📦 Обновление списка пакетов..."
-apt-get update
+apt-get update -o DPkg::Lock::Timeout=300
 
-echo "⬆️ Обновление установленных пакетов..."
-# Ключевое изменение: -o Dpkg::Options (оставляем старые конфиги при конфликте)
-apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+echo "⬆️ Обновление пакетов..."
+apt-get full-upgrade "${APT_OPTS[@]}"
 
-# --- БЛОК ОЧИСТКИ ---
-echo "🧹 Удаление неиспользуемых пакетов и конфигов..."
-apt-get autoremove --purge -y
+echo "🧹 Удаление ненужных пакетов..."
+apt-get autoremove --purge "${APT_OPTS[@]}"
 
-echo "🗑 Очистка кэша пакетов..."
-apt-get autoclean -y
-apt-get clean -y
+echo "🗑 Очистка кэша..."
+apt-get clean
 
-# --- БЛОК ЛОГОВ ---
-echo "📜 Очистка системных логов..."
-journalctl --vacuum-time=7d
+if command -v journalctl >/dev/null 2>&1; then
+  echo "📜 Очистка журналов..."
+  journalctl --vacuum-time=7d --vacuum-size=200M || true
+fi
 
-echo "✅ Обслуживание системы успешно завершено!"
-echo "💾 Свободное место на диске:"
-df -h / | grep /
+echo "📄 Удаление старых ротированных логов..."
+find /var/log -type f \( -name "*.gz" -o -name "*.[0-9]" -o -name "*.old" \) \
+  -mtime +14 -delete 2>/dev/null || true
+
+echo "💾 Свободное место:"
+df -h /
+echo "📁 Раздел /boot:"
+df -h /boot 2>/dev/null || true
+
+if [ -f /var/run/reboot-required ]; then
+  echo "⚠️  ТРЕБУЕТСЯ ПЕРЕЗАГРУЗКА:"
+  cat /var/run/reboot-required.pkgs 2>/dev/null || true
+else
+  echo "✅ Перезагрузка не требуется."
+fi
+
+if command -v needrestart >/dev/null 2>&1; then
+  echo "🔄 Сервисы, использующие устаревшие библиотеки:"
+  needrestart -b -r l || true
+fi
+
+echo "=== $(date "+%F %T") Обслуживание завершено ==="
