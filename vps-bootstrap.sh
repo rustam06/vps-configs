@@ -33,7 +33,7 @@ ask()  { read -rp  "$1" "$2" || { err "Ввод прерван."; exit 1; }; }
 asks() { read -rsp "$1" "$2" || { echo; err "Ввод прерван."; exit 1; }; echo; }
 
 SSHD_CONF="/etc/ssh/sshd_config"
-DROPIN="/etc/ssh/sshd_config.d/00-hardening.conf"
+DROPIN="/etc/ssh/sshd_config.d/00-00-hardening.conf"
 BACKUP="/root/.bootstrap-backup-$(date +%Y%m%d-%H%M%S)"
 CONFIRM="/usr/local/sbin/ssh-confirm"
 
