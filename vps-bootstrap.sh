@@ -208,6 +208,7 @@ ClientAliveCountMax 2
 EOF
 chmod 644 "$DROPIN"
 
+install -d -m 0755 -o root -g root /run/sshd
 sshd -t || { err "Ошибка синтаксиса конфига SSH."; rollback_ssh; }
 
 # `sshd -t` проверяет только синтаксис. Смотрим ЭФФЕКТИВНЫЙ конфиг: так
